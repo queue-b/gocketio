@@ -25,11 +25,6 @@ type Message struct {
 	Data      interface{}
 }
 
-type binaryPackedPacket struct {
-	Message           Message
-	AdditionalBuffers [][]byte
-}
-
 // BinaryPlaceholder represents the position of a particular binary
 // attachement in a string-encoded packet
 type BinaryPlaceholder struct {
