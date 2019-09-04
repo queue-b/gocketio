@@ -2,264 +2,155 @@ package gocket
 
 import "testing"
 
-func TestDecodeStringPacketWithBinaryPayload(t *testing.T) {
-	testData := "b4AAECAwQ=" // type: message (4), contains binary data 1,2,3,4
-
-	decodedPacket, err := DecodeStringPacket(testData)
-
-	if err != nil {
-		t.Errorf("Unable to decode string packet %v", err)
+func TestEncodeConnectWithID(t *testing.T) {
+	id := 1
+	m := Message{
+		ID:   &id,
+		Type: Connect,
+		Data: []string{"test"},
 	}
 
-	switch p := decodedPacket.(type) {
-	case *BinaryPacket:
-		if p.Type != Message {
-			t.Errorf("Decoded packet.Type invalid. Expected %v, got %v", Message, p.Type)
-		}
+	expected := `01["test"]`
 
-		if p.Data == nil {
-			t.Error("Decoded packet.Data invalid. Expected non-nil, got nil")
-		}
+	encoded, err := m.Encode()
 
-		if len(p.Data) != 5 {
-			t.Errorf("Decoded packet.Data invalid. Expected length to be 5, got %v", len(p.Data))
-		}
+	if err != nil {
+		t.Errorf("Unable to encode %v", err)
+	}
 
-		expectedData := []byte{0, 1, 2, 3, 4}
-
-		for i := 0; i < 5; i++ {
-			if expectedData[i] != p.Data[i] {
-				t.Errorf("Decoded packet.Data invalid at index %v. Expected %v got %v", i, expectedData[i], p.Data[i])
-			}
-		}
-	default:
-		t.Error("Received wrong output packet type")
+	if string(encoded[0]) != expected {
+		t.Errorf("Encoded message invalid. Expected %v got %v", expected, string(encoded[0]))
 	}
 }
 
-func TestDecodeStringPacketWithStringPayload(t *testing.T) {
-	testData := "4hello 亜"
-
-	decodedPacket, err := DecodeStringPacket(testData)
-
-	if err != nil {
-		t.Errorf("Unable to decode packet %v", err)
+func TestEncodeDisconnect(t *testing.T) {
+	m := Message{
+		Type:      Disconnect,
+		Namespace: "/woot",
 	}
 
-	switch p := decodedPacket.(type) {
-	case *StringPacket:
-		if p.Type != Message {
-			t.Errorf("Decoded packet.Type invalid. Expected %v, got %v", Message, p.Type)
-		}
+	expected := `1/woot,`
 
-		if p.Data == nil {
-			t.Errorf("Decoded packet.Data invalid. Expected non-nil, got nil")
-		}
+	encoded, err := m.Encode()
 
-		if len([]rune(*p.Data)) != 7 {
-			t.Errorf("Decoded packet.Data invalid. Expected length 7, got %v", len(*p.Data))
-		}
+	if err != nil {
+		t.Errorf("Unable to encode %v", err)
+	}
 
-		if *p.Data != "hello 亜" {
-			t.Errorf("Decoded packet.Data invalid. Expected 'hello 亜', got %v", *p.Data)
-		}
-	default:
-		t.Errorf("Expected gocket.StringPacket got %T", p)
+	if string(encoded[0]) != expected {
+		t.Errorf("Encoded message invalid. Expected %v got %v", expected, string(encoded[0]))
 	}
 }
 
-func TestDecodeBinaryPacket(t *testing.T) {
-	testData := []byte{04, 00, 01, 02, 03, 04}
-
-	decodedPacket, err := DecodeBinaryPacket(testData)
-
-	if err != nil {
-		t.Errorf("Unable to decode binary packet %v", err)
+func TestEncodeEventWithNamespaceAndID(t *testing.T) {
+	id := 1
+	m := Message{
+		Type:      Event,
+		Namespace: "/test",
+		ID:        &id,
+		Data:      []interface{}{"a", 1, struct{}{}},
 	}
 
-	switch p := decodedPacket.(type) {
-	case *BinaryPacket:
-		if p.Type != Message {
-			t.Errorf("Decoded packet.Type invalid. Expected %v, got %v", Message, p.Type)
-		}
+	expected := `2/test,1["a",1,{}]`
 
-		if p.Data == nil {
-			t.Error("Decoded packet.Data invalid. Expected non-nil, got nil")
-		}
+	encoded, err := m.Encode()
 
-		if len(p.Data) != 5 {
-			t.Errorf("Decoded packet.Data invalid. Expected length to be 5, got %v", len(p.Data))
-		}
+	if err != nil {
+		t.Errorf("Unable to encode %v", err)
+	}
 
-		expectedData := []byte{0, 1, 2, 3, 4}
-
-		for i := 0; i < 5; i++ {
-			if expectedData[i] != p.Data[i] {
-				t.Errorf("Decoded packet.Data invalid at index %v. Expected %v got %v", i, expectedData[i], p.Data[i])
-			}
-		}
-	default:
-		t.Error("Received wrong output packet type")
+	if string(encoded[0]) != expected {
+		t.Errorf("Encoded message invalid. Expected %v got %v", expected, string(encoded[0]))
 	}
 }
 
-func TestDecodeStringPayload(t *testing.T) {
-	testData := "10:b4AAECAwQ=8:4hello 亜"
+func TestEncodeSimpleBinary(t *testing.T) {
+	id := 23
 
-	packets, err := DecodeStringPayload(testData)
+	/* 51-/cool,23["a",{"_placeholder":true,"num":0}]
+	<Buffer 61 62 63> */
 
-	if err != nil {
-		t.Errorf("Unable to decode payload %v ", err)
+	expected := `51-/cool,23["a",{"_placeholder":true,"num":0}]`
+
+	m := Message{
+		Type:      BinaryEvent,
+		Namespace: "/cool",
+		ID:        &id,
+		Data:      []interface{}{"a", []byte("abc")},
 	}
 
-	if len(packets) != 2 {
-		t.Errorf("Expected 2 packets, got %v", len(packets))
-	}
-
-	firstPacket := packets[0]
-	secondPacket := packets[1]
-
-	switch p := firstPacket.(type) {
-	case *BinaryPacket:
-	default:
-		t.Errorf("Expected gocket.BinaryPacket, got %T", p)
-	}
-
-	switch p := secondPacket.(type) {
-	case *StringPacket:
-	default:
-		t.Errorf("Expected gocket.StringPacket, got %T", p)
-	}
-}
-
-func TestDecodeBinaryPayload(t *testing.T) {
-	testData := []byte{01, 06, 0xff, 04, 00, 01, 02, 03, 04, 00, 01, 00, 0xff, 34, 68, 65, 0x6c, 0x6c, 0x6f, 20, 0xe4, 0xba, 0x9c}
-
-	packets, err := DecodeBinaryPayload(testData)
-
-	if err != nil {
-		t.Errorf("Unable to decode payload %v ", err)
-	}
-
-	if len(packets) != 2 {
-		t.Errorf("Expected 2 packets, got %v", len(packets))
-	}
-
-	firstPacket := packets[0]
-	secondPacket := packets[1]
-
-	switch p := firstPacket.(type) {
-	case *BinaryPacket:
-	default:
-		t.Errorf("Expected gocket.BinaryPacket, got %T", p)
-	}
-
-	switch p := secondPacket.(type) {
-	case *StringPacket:
-	default:
-		t.Errorf("Expected gocket.StringPacket, got %T", p)
-	}
-}
-
-func TestEncodeBinaryPacketAsString(t *testing.T) {
-	packet := BinaryPacket{
-		Type: Message,
-		Data: []byte{0, 1, 2, 3, 4},
-	}
-
-	expected := "b4AAECAwQ="
-
-	encoded, err := packet.Encode(false)
+	encoded, err := m.Encode()
 
 	if err != nil {
 		t.Errorf("Unable to encode packet %v", err)
 	}
 
-	if string(encoded) != expected {
-		t.Errorf("Encoded packet invalid. Expected %v got %v", expected, encoded)
+	if len(encoded) != 2 {
+		t.Errorf("Encoded message invalid. Expected 2 items, got %v", len(encoded))
 	}
+
+	if string(encoded[0]) != expected {
+		t.Errorf("Encoded message invalid. Expected %v got %v", expected, string(encoded[0]))
+	}
+
 }
 
-func TestEncodeBinaryPacketAsBinary(t *testing.T) {
-	packet := BinaryPacket{
-		Type: Message,
-		Data: []byte{0, 1, 2, 3, 4},
+func TestEncodeBinaryFixedLengthByteArray(t *testing.T) {
+	id := 23
+
+	/* 51-/cool,23["a",{"_placeholder":true,"num":0}]
+	<Buffer 61 62 63> */
+
+	expected := `51-/cool,23["a",{"_placeholder":true,"num":0}]`
+
+	m := Message{
+		Type:      BinaryEvent,
+		Namespace: "/cool",
+		ID:        &id,
+		Data:      []interface{}{"a", [1]byte{10}},
 	}
 
-	expected := []byte{byte(Message), 0, 1, 2, 3, 4}
-
-	encoded, err := packet.Encode(true)
+	encoded, err := m.Encode()
 
 	if err != nil {
 		t.Errorf("Unable to encode packet %v", err)
 	}
 
-	if encoded == nil {
-		t.Error("Encoded packet invalid. Expected non-nil got nil")
+	if len(encoded) != 2 {
+		t.Errorf("Encoded message invalid. Expected 2 items, got %v", len(encoded))
 	}
 
-	if len(encoded) != len(expected) {
-		t.Errorf("Encoded packet invalid. Expected length %v got length %v", len(expected), len(encoded))
-	}
-
-	for i, v := range encoded {
-		if v != expected[i] {
-			t.Errorf("Encoded packet invalid. Expected %v at %v, got %v", expected[i], i, v)
-		}
+	if string(encoded[0]) != expected {
+		t.Errorf("Encoded message invalid. Expected %v got %v", expected, string(encoded[0]))
 	}
 }
 
-func TestEncodeStringPacketWithData(t *testing.T) {
-	data := "hello 亜"
+func TestEncodeBinaryByteArrayInStruct(t *testing.T) {
+	id := 23
 
-	packet := StringPacket{
-		Type: Message,
-		Data: &data,
+	/* 51-/cool,23["a",{"_placeholder":true,"num":0}]
+	<Buffer 61 62 63> */
+
+	expected := `51-/cool,23["a",{"Test":{"_placeholder":true,"num":0}}]`
+
+	m := Message{
+		Type:      BinaryEvent,
+		Namespace: "/cool",
+		ID:        &id,
+		Data:      []interface{}{"a", struct{ Test []byte }{Test: []byte("asdf")}},
 	}
 
-	expected := "4hello 亜"
-
-	encoded, err := packet.Encode(false)
+	encoded, err := m.Encode()
 
 	if err != nil {
 		t.Errorf("Unable to encode packet %v", err)
 	}
 
-	if encoded == nil {
-		t.Error("Encoded packet invalid. Expected non-nil got nil")
+	if len(encoded) != 2 {
+		t.Errorf("Encoded message invalid. Expected 2 items, got %v", len(encoded))
 	}
 
-	if len(encoded) != len(expected) {
-		t.Errorf("Encoded packet invalid. Expected length %v got length %v", len(expected), len(encoded))
-	}
-
-	if string(encoded) != expected {
-		t.Errorf("Encoded packet invalid. Expected %v, got %v", expected, string(encoded))
-	}
-}
-
-func TestEncodeStringPacketWithoutData(t *testing.T) {
-	packet := StringPacket{
-		Type: Message,
-	}
-
-	expected := "4"
-
-	encoded, err := packet.Encode(false)
-
-	if err != nil {
-		t.Errorf("Unable to encode packet %v", err)
-	}
-
-	if encoded == nil {
-		t.Error("Encoded packet invalid. Expected non-nil got nil")
-	}
-
-	if len(encoded) != len(expected) {
-		t.Errorf("Encoded packet invalid. Expected length %v got length %v", len(expected), len(encoded))
-	}
-
-	if string(encoded) != expected {
-		t.Errorf("Encoded packet invalid. Expected %v, got %v", expected, string(encoded))
+	if string(encoded[0]) != expected {
+		t.Errorf("Encoded message invalid. Expected %v got %v", expected, string(encoded[0]))
 	}
 }
