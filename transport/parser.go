@@ -27,6 +27,7 @@ const (
 type EnginePacket interface {
 	GetType() PacketType
 	Encode(bool) ([]byte, error)
+	GetData() []byte
 }
 
 // BinaryPacket represents a engine.io packet with binary (byte) contents
@@ -58,6 +59,10 @@ func (p *BinaryPacket) Encode(binary bool) ([]byte, error) {
 	return packet, nil
 }
 
+func (p *BinaryPacket) GetData() []byte {
+	return p.Data
+}
+
 // StringPacket represents an engine.io packet with UTF-8 string contents
 type StringPacket struct {
 	Type PacketType
@@ -80,6 +85,14 @@ func (p *StringPacket) Encode(binary bool) ([]byte, error) {
 	return []byte(encoded), nil
 }
 
+func (p *StringPacket) GetData() []byte {
+	if p.Data == nil {
+		return nil
+	}
+
+	return []byte(*p.Data)
+}
+
 // DecodeBinaryPacket returns a BinaryPacket from the contents of the byte array
 func DecodeBinaryPacket(packet []byte) (EnginePacket, error) {
 	if packet == nil || len(packet) < 2 {
@@ -94,7 +107,7 @@ func DecodeBinaryPacket(packet []byte) (EnginePacket, error) {
 
 // DecodeStringPacket returns a StringPacket or BinaryPacket from the contents of the string
 func DecodeStringPacket(packet string) (EnginePacket, error) {
-	if len(packet) < 2 {
+	if len(packet) < 1 {
 		return &StringPacket{}, errors.New("Invalid packet")
 	}
 
