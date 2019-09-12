@@ -1,5 +1,64 @@
 package socket
 
+import (
+	"errors"
+
+	"github.com/queue-b/gocket/transport"
+)
+
+// ErrNeedMoreAttachments
+var ErrNeedMoreAttachments = errors.New("Waiting for additional attachments")
+
+type Decoder struct {
+	attachmentCount int
+	tempData        interface{}
+	buffers         [][]byte
+}
+
+func (d *Decoder) Reset() {
+	d.attachmentCount = 0
+	d.buffers = nil
+	d.tempData = nil
+}
+
+func (d *Decoder) Decode(packet transport.EnginePacket) (interface{}, error) {
+	switch p := packet.(type) {
+	case *transport.BinaryPacket:
+		if p.Data != nil {
+			d.buffers = append(d.buffers, p.Data)
+		}
+	case *transport.StringPacket:
+		if p.Data != nil {
+			d.Reset()
+			message, err := DecodeMessage(*p.Data)
+
+			if err != nil {
+				return nil, err
+			}
+
+			d.tempData = message.Data
+		}
+	}
+
+	if d.attachmentCount == 0 {
+		oldData := d.tempData
+
+		d.Reset()
+		return oldData, nil
+	}
+
+	if d.buffers != nil && len(d.buffers) == d.attachmentCount {
+		oldData := d.tempData
+		oldBuffers := d.buffers
+
+		d.Reset()
+
+		return replacePlaceholdersWithByteSlices(oldData, oldBuffers), nil
+	}
+
+	return nil, ErrNeedMoreAttachments
+}
+
 func replacePlaceholdersWithByteSlices(data interface{}, buffers [][]byte) interface{} {
 	// Handle JSON types:
 	// object --> map[string]interface{}
