@@ -32,7 +32,7 @@ func (d *Decoder) Decode(packet engine.EnginePacket) (Message, error) {
 	case *engine.StringPacket:
 		if p.Data != nil {
 			d.Reset()
-			message, err := DecodeMessage(*p.Data)
+			message, err := decodeMessage(*p.Data)
 
 			if err != nil {
 				return Message{}, err
@@ -110,7 +110,7 @@ func replacePlaceholdersWithByteSlices(data interface{}, buffers [][]byte) inter
 	return nil
 }
 
-func DecodeMessage(message string) (*Message, error) {
+func decodeMessage(message string) (*Message, error) {
 	// Make sure the message received was at least 1 character (just the type)
 	if len(message) < 1 {
 		return nil, errors.New("Message too short")
