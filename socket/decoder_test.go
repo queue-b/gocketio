@@ -22,7 +22,7 @@ func TestReplacePlaceholdersWithByteSlicesSimpleNumber(t *testing.T) {
 		t.Errorf("Unable to decode json %v\n", err)
 	}
 
-	replaced := replacePlaceholdersWithByteSlices(decoded, nil)
+	replaced, _ := replacePlaceholdersWithByteSlices(decoded, nil)
 
 	if replaced == nil {
 		t.Error("Invalid replacement. Expected non-nil, got nil")
@@ -56,7 +56,7 @@ func TestReplacePlaceholdersWithByteSlicesSimpleString(t *testing.T) {
 		t.Errorf("Unable to decode json %v\n", err)
 	}
 
-	replaced := replacePlaceholdersWithByteSlices(decoded, nil)
+	replaced, _ := replacePlaceholdersWithByteSlices(decoded, nil)
 
 	if replaced == nil {
 		t.Error("Invalid replacement. Expected non-nil, got nil")
@@ -89,7 +89,7 @@ func TestReplacePlaceholdersWithByteSlicesSimpleSlice(t *testing.T) {
 		t.Errorf("Unable to decode json %v\n", err)
 	}
 
-	replaced := replacePlaceholdersWithByteSlices(decoded, nil)
+	replaced, _ := replacePlaceholdersWithByteSlices(decoded, nil)
 
 	if replaced == nil {
 		t.Error("Invalid replacement. Expected non-nil, got nil")
@@ -144,7 +144,7 @@ func TestReplacePlaceholdersWithByteSlicesSimplePlaceholder(t *testing.T) {
 
 	attachments = append(attachments, []byte{0, 1, 2})
 
-	replaced := replacePlaceholdersWithByteSlices(decoded, attachments)
+	replaced, _ := replacePlaceholdersWithByteSlices(decoded, attachments)
 
 	if replaced == nil {
 		t.Error("Invalid replacement. Expected non-nil, got nil")
@@ -196,7 +196,7 @@ func TestReplacePlaceholdersWithByteSlicesSimplePlaceholderAndOther(t *testing.T
 
 	attachments = append(attachments, []byte{0, 1, 2})
 
-	replaced := replacePlaceholdersWithByteSlices(decoded, attachments)
+	replaced, _ := replacePlaceholdersWithByteSlices(decoded, attachments)
 
 	if replaced == nil {
 		t.Error("Invalid replacement. Expected non-nil, got nil")
@@ -224,5 +224,96 @@ func TestReplacePlaceholdersWithByteSlicesSimplePlaceholderAndOther(t *testing.T
 		}
 	default:
 		t.Errorf("Invalid replacement. Expected []interface{} got %T", replaced)
+	}
+}
+
+func TestDecodeBinaryPacketWithoutNamespaceWithoutAttachments(t *testing.T) {
+	data := `523["a"]`
+
+	m, err := decodeMessage(data)
+
+	if err != nil {
+		t.Errorf("Unable to decode message %v\n", err)
+	}
+
+	if m.Type != BinaryEvent {
+		t.Errorf("Invalid decoded message. Expected type BinaryEvent, got %v", m.Type)
+	}
+
+	if m.AttachmentCount != 0 {
+		t.Errorf("Invalid decoded message. Expected no attachments, got %v", m.AttachmentCount)
+	}
+
+	if *m.ID != 23 {
+		t.Errorf("Invalid decoded message. Expected ID 23, got %v", m.ID)
+	}
+
+	if m.Namespace != "" {
+		t.Errorf("Invalid decoded message. Expected no namespace, got %v", m.Namespace)
+	}
+
+	switch p := m.Data.(type) {
+	case []interface{}:
+		if len(p) != 1 {
+			t.Errorf("Invalid decoded message. Expected data length 1, got %v", len(p))
+		}
+	}
+}
+
+func TestDecodeBinaryPacketWithNamespaceWithoutAttachments(t *testing.T) {
+	data := `5/cool,23["a"]`
+
+	m, err := decodeMessage(data)
+
+	if err != nil {
+		t.Errorf("Unable to decode message %v\n", err)
+	}
+
+	if m.AttachmentCount != 0 {
+		t.Errorf("Invalid decoded message. Expected no attachments, got %v", m.AttachmentCount)
+	}
+
+	if *m.ID != 23 {
+		t.Errorf("Invalid decoded message. Expected ID 23, got %v", m.ID)
+	}
+
+	if m.Namespace != "/cool" {
+		t.Errorf("Invalid decoded message. Expected Namespace /cool, got %v", m.Namespace)
+	}
+
+	switch p := m.Data.(type) {
+	case []interface{}:
+		if len(p) != 1 {
+			t.Errorf("Invalid decoded message. Expected data length 1, got %v", len(p))
+		}
+	}
+}
+
+func TestDecodeBinaryPacketWithAttachments(t *testing.T) {
+	data := `51-/cool,23["a",{"_placeholder":true,"num":0}]`
+
+	m, err := decodeMessage(data)
+
+	if err != nil {
+		t.Errorf("Unable to decode message %v\n", err)
+	}
+
+	if m.AttachmentCount != 1 {
+		t.Errorf("Invalid decoded message. Expected AttachmentCount 1, got %v", m.AttachmentCount)
+	}
+
+	if *m.ID != 23 {
+		t.Errorf("Invalid decoded message. Expected ID 23, got %v", m.ID)
+	}
+
+	if m.Namespace != "/cool" {
+		t.Errorf("Invalid decoded message. Expected Namespace /cool, got %v", m.Namespace)
+	}
+
+	switch p := m.Data.(type) {
+	case []interface{}:
+		if len(p) != 2 {
+			t.Errorf("Invalid decoded message. Expected data length 2, got %v", len(p))
+		}
 	}
 }

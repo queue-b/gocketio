@@ -10,20 +10,29 @@ import (
 	"github.com/queue-b/gocket/engine"
 )
 
-// ErrNeedMoreAttachments
-var ErrNeedMoreAttachments = errors.New("Waiting for additional attachments")
+// ErrWaitingForMorePackets is returned when the Decoder has not yet received enough
+// BinaryPackets to fully decode a binary message
+var ErrWaitingForMorePackets = errors.New("Waiting for more packets")
 
-type Decoder struct {
+// ErrUnexpectedType is returned when the decoder is trying to replace placeholders with []byte
+// and encounters an unexpected type
+var ErrUnexpectedType = errors.New("Unexpected type")
+
+// BinaryDecoder reconstructs BinaryEvents and BinaryAcks from multiple EnginePackets
+type BinaryDecoder struct {
 	message *Message
 	buffers [][]byte
 }
 
-func (d *Decoder) Reset() {
-	d.buffers = nil
+// Reset clears the current state of the BinaryDecoder
+func (d *BinaryDecoder) Reset() {
+	d.buffers = [][]byte{}
 	d.message = nil
 }
 
-func (d *Decoder) Decode(packet engine.EnginePacket) (Message, error) {
+// Decode returns either a Message, or ErrWaitingForMorePackets if additional Packets
+// are required to fully reconstruct a BinaryEvent or BinaryAck
+func (d *BinaryDecoder) Decode(packet engine.EnginePacket) (Message, error) {
 	switch p := packet.(type) {
 	case *engine.BinaryPacket:
 		if p.Data != nil {
@@ -46,6 +55,7 @@ func (d *Decoder) Decode(packet engine.EnginePacket) (Message, error) {
 		return Message{}, errors.New("No message available")
 	}
 
+	// The decoder is not reconstructing a BinaryEvent or BinaryAck; return the current message
 	if d.message.AttachmentCount == 0 {
 		m := *d.message
 
@@ -53,21 +63,27 @@ func (d *Decoder) Decode(packet engine.EnginePacket) (Message, error) {
 		return m, nil
 	}
 
-	if d.buffers != nil && len(d.buffers) == d.message.AttachmentCount {
+	if len(d.buffers) == d.message.AttachmentCount {
 		m := *d.message
 		b := d.buffers
 
 		d.Reset()
 
-		m.Data = replacePlaceholdersWithByteSlices(m.Data, b)
+		replaced, err := replacePlaceholdersWithByteSlices(m.Data, b)
+
+		if err != nil {
+			return Message{}, err
+		}
+
+		m.Data = replaced
 
 		return m, nil
 	}
 
-	return Message{}, ErrNeedMoreAttachments
+	return Message{}, ErrWaitingForMorePackets
 }
 
-func replacePlaceholdersWithByteSlices(data interface{}, buffers [][]byte) interface{} {
+func replacePlaceholdersWithByteSlices(data interface{}, buffers [][]byte) (interface{}, error) {
 	// Handle JSON types:
 	// object --> map[string]interface{}
 	// number --> float64
@@ -84,30 +100,40 @@ func replacePlaceholdersWithByteSlices(data interface{}, buffers [][]byte) inter
 			attachmentIndex, hasAttachmentIndex := d["num"]
 
 			if hasPlaceholder && hasAttachmentIndex {
-				return buffers[int(attachmentIndex.(float64))]
+				return buffers[int(attachmentIndex.(float64))], nil
 			}
 		}
 
 		for k, v := range d {
-			d[k] = replacePlaceholdersWithByteSlices(v, buffers)
+			updated, err := replacePlaceholdersWithByteSlices(v, buffers)
+
+			if err != nil {
+				return nil, err
+			}
+
+			d[k] = updated
 		}
 	case float64:
-		return d
+		return d, nil
 	case bool:
-		return d
+		return d, nil
 	case string:
-		return d
+		return d, nil
 	case []interface{}:
 		replaced := d[:0]
 		for _, val := range d {
-			replaced = append(replaced, replacePlaceholdersWithByteSlices(val, buffers))
+			updated, err := replacePlaceholdersWithByteSlices(val, buffers)
+
+			if err != nil {
+				return nil, err
+			}
+
+			replaced = append(replaced, updated)
 		}
-		return replaced
-	default:
-		return nil
+		return replaced, nil
 	}
 
-	return nil
+	return nil, ErrUnexpectedType
 }
 
 func decodeMessage(message string) (*Message, error) {
