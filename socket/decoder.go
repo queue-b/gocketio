@@ -3,60 +3,64 @@ package socket
 import (
 	"errors"
 
-	"github.com/queue-b/gocket/transport"
+	"github.com/queue-b/gocket/engine"
 )
 
 // ErrNeedMoreAttachments
 var ErrNeedMoreAttachments = errors.New("Waiting for additional attachments")
 
 type Decoder struct {
-	attachmentCount int
-	tempData        interface{}
-	buffers         [][]byte
+	message *Message
+	buffers [][]byte
 }
 
 func (d *Decoder) Reset() {
-	d.attachmentCount = 0
 	d.buffers = nil
-	d.tempData = nil
+	d.message = nil
 }
 
-func (d *Decoder) Decode(packet transport.EnginePacket) (interface{}, error) {
+func (d *Decoder) Decode(packet engine.EnginePacket) (Message, error) {
 	switch p := packet.(type) {
-	case *transport.BinaryPacket:
+	case *engine.BinaryPacket:
 		if p.Data != nil {
 			d.buffers = append(d.buffers, p.Data)
 		}
-	case *transport.StringPacket:
+	case *engine.StringPacket:
 		if p.Data != nil {
 			d.Reset()
 			message, err := DecodeMessage(*p.Data)
 
 			if err != nil {
-				return nil, err
+				return Message{}, err
 			}
 
-			d.tempData = message.Data
+			d.message = message
 		}
 	}
 
-	if d.attachmentCount == 0 {
-		oldData := d.tempData
-
-		d.Reset()
-		return oldData, nil
+	if d.message == nil {
+		return Message{}, errors.New("No message available")
 	}
 
-	if d.buffers != nil && len(d.buffers) == d.attachmentCount {
-		oldData := d.tempData
-		oldBuffers := d.buffers
+	if d.message.AttachmentCount == 0 {
+		m := *d.message
+
+		d.Reset()
+		return m, nil
+	}
+
+	if d.buffers != nil && len(d.buffers) == d.message.AttachmentCount {
+		m := *d.message
+		b := d.buffers
 
 		d.Reset()
 
-		return replacePlaceholdersWithByteSlices(oldData, oldBuffers), nil
+		m.Data = replacePlaceholdersWithByteSlices(m.Data, b)
+
+		return m, nil
 	}
 
-	return nil, ErrNeedMoreAttachments
+	return Message{}, ErrNeedMoreAttachments
 }
 
 func replacePlaceholdersWithByteSlices(data interface{}, buffers [][]byte) interface{} {
