@@ -20,7 +20,7 @@ var ErrUnexpectedType = errors.New("Unexpected type")
 
 // BinaryDecoder reconstructs BinaryEvents and BinaryAcks from multiple EnginePackets
 type BinaryDecoder struct {
-	message *Message
+	message *Packet
 	buffers [][]byte
 }
 
@@ -32,7 +32,7 @@ func (d *BinaryDecoder) Reset() {
 
 // Decode returns either a Message, or ErrWaitingForMorePackets if additional Packets
 // are required to fully reconstruct a BinaryEvent or BinaryAck
-func (d *BinaryDecoder) Decode(packet engine.EnginePacket) (Message, error) {
+func (d *BinaryDecoder) Decode(packet engine.EnginePacket) (Packet, error) {
 	switch p := packet.(type) {
 	case *engine.BinaryPacket:
 		if p.Data != nil {
@@ -44,7 +44,7 @@ func (d *BinaryDecoder) Decode(packet engine.EnginePacket) (Message, error) {
 			message, err := decodeMessage(*p.Data)
 
 			if err != nil {
-				return Message{}, err
+				return Packet{}, err
 			}
 
 			d.message = message
@@ -52,7 +52,7 @@ func (d *BinaryDecoder) Decode(packet engine.EnginePacket) (Message, error) {
 	}
 
 	if d.message == nil {
-		return Message{}, errors.New("No message available")
+		return Packet{}, errors.New("No message available")
 	}
 
 	// The decoder is not reconstructing a BinaryEvent or BinaryAck; return the current message
@@ -72,7 +72,7 @@ func (d *BinaryDecoder) Decode(packet engine.EnginePacket) (Message, error) {
 		replaced, err := replacePlaceholdersWithByteSlices(m.Data, b)
 
 		if err != nil {
-			return Message{}, err
+			return Packet{}, err
 		}
 
 		m.Data = replaced
@@ -80,7 +80,7 @@ func (d *BinaryDecoder) Decode(packet engine.EnginePacket) (Message, error) {
 		return m, nil
 	}
 
-	return Message{}, ErrWaitingForMorePackets
+	return Packet{}, ErrWaitingForMorePackets
 }
 
 func replacePlaceholdersWithByteSlices(data interface{}, buffers [][]byte) (interface{}, error) {
@@ -136,13 +136,13 @@ func replacePlaceholdersWithByteSlices(data interface{}, buffers [][]byte) (inte
 	return nil, ErrUnexpectedType
 }
 
-func decodeMessage(message string) (*Message, error) {
+func decodeMessage(message string) (*Packet, error) {
 	// Make sure the message received was at least 1 character (just the type)
 	if len(message) < 1 {
 		return nil, errors.New("Message too short")
 	}
 
-	decoded := &Message{}
+	decoded := &Packet{}
 
 	t, err := strconv.ParseInt(string(message[0]), 10, 64)
 
@@ -150,7 +150,7 @@ func decodeMessage(message string) (*Message, error) {
 		return nil, err
 	}
 
-	decoded.Type = MessageType(t)
+	decoded.Type = PacketType(t)
 
 	fmt.Printf("Type %v\n", decoded.Type)
 

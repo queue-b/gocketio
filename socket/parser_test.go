@@ -4,7 +4,7 @@ import "testing"
 
 func TestEncodeConnectWithID(t *testing.T) {
 	id := 1
-	m := Message{
+	p := Packet{
 		ID:   &id,
 		Type: Connect,
 		Data: []string{"test"},
@@ -12,7 +12,7 @@ func TestEncodeConnectWithID(t *testing.T) {
 
 	expected := `01["test"]`
 
-	encoded, err := m.Encode()
+	encoded, err := p.Encode()
 
 	if err != nil {
 		t.Errorf("Unable to encode %v", err)
@@ -24,14 +24,14 @@ func TestEncodeConnectWithID(t *testing.T) {
 }
 
 func TestEncodeDisconnect(t *testing.T) {
-	m := Message{
+	p := Packet{
 		Type:      Disconnect,
 		Namespace: "/woot",
 	}
 
 	expected := `1/woot,`
 
-	encoded, err := m.Encode()
+	encoded, err := p.Encode()
 
 	if err != nil {
 		t.Errorf("Unable to encode %v", err)
@@ -44,7 +44,7 @@ func TestEncodeDisconnect(t *testing.T) {
 
 func TestEncodeEventWithNamespaceAndID(t *testing.T) {
 	id := 1
-	m := Message{
+	p := Packet{
 		Type:      Event,
 		Namespace: "/test",
 		ID:        &id,
@@ -53,7 +53,7 @@ func TestEncodeEventWithNamespaceAndID(t *testing.T) {
 
 	expected := `2/test,1["a",1,{}]`
 
-	encoded, err := m.Encode()
+	encoded, err := p.Encode()
 
 	if err != nil {
 		t.Errorf("Unable to encode %v", err)
@@ -72,14 +72,14 @@ func TestEncodeSimpleBinary(t *testing.T) {
 
 	expected := `51-/cool,23["a",{"_placeholder":true,"num":0}]`
 
-	m := Message{
+	p := Packet{
 		Type:      BinaryEvent,
 		Namespace: "/cool",
 		ID:        &id,
 		Data:      []interface{}{"a", []byte("abc")},
 	}
 
-	encoded, err := m.Encode()
+	encoded, err := p.Encode()
 
 	if err != nil {
 		t.Errorf("Unable to encode packet %v", err)
@@ -103,14 +103,14 @@ func TestEncodeBinaryFixedLengthByteArray(t *testing.T) {
 
 	expected := `51-/cool,23["a",{"_placeholder":true,"num":0}]`
 
-	m := Message{
+	p := Packet{
 		Type:      BinaryEvent,
 		Namespace: "/cool",
 		ID:        &id,
 		Data:      []interface{}{"a", [1]byte{10}},
 	}
 
-	encoded, err := m.Encode()
+	encoded, err := p.Encode()
 
 	if err != nil {
 		t.Errorf("Unable to encode packet %v", err)
@@ -133,14 +133,14 @@ func TestEncodeBinaryByteArrayInStruct(t *testing.T) {
 
 	expected := `51-/cool,23["a",{"Test":{"_placeholder":true,"num":0}}]`
 
-	m := Message{
+	p := Packet{
 		Type:      BinaryEvent,
 		Namespace: "/cool",
 		ID:        &id,
 		Data:      []interface{}{"a", struct{ Test []byte }{Test: []byte("asdf")}},
 	}
 
-	encoded, err := m.Encode()
+	encoded, err := p.Encode()
 
 	if err != nil {
 		t.Errorf("Unable to encode packet %v", err)
