@@ -8,93 +8,8 @@ import (
 	"strings"
 )
 
-// PacketType is the type of engine.io the packet being encoded or decoded
-type PacketType uint8
-
-const ParserProtocol int = 3
-
-const (
-	Open PacketType = iota
-	Close
-	Ping
-	Pong
-	Message
-	Upgrade
-	NoOp
-)
-
-// EnginePacket represents a generic engine.io packet
-type EnginePacket interface {
-	GetType() PacketType
-	Encode(bool) ([]byte, error)
-	GetData() []byte
-}
-
-// BinaryPacket represents a engine.io packet with binary (byte) contents
-type BinaryPacket struct {
-	Type PacketType
-	Data []byte
-}
-
-// GetType returns the engine.io packet type of the packet
-func (p *BinaryPacket) GetType() PacketType {
-	return p.Type
-}
-
-// Encode returns the encoded engine.io packet
-func (p *BinaryPacket) Encode(binary bool) ([]byte, error) {
-	if !binary {
-		message := fmt.Sprintf("b%v", p.Type)
-
-		if p.Data != nil {
-			message += base64.StdEncoding.EncodeToString(p.Data)
-		}
-
-		return []byte(message), nil
-	}
-
-	packet := []byte{byte(p.Type)}
-	packet = append(packet, p.Data...)
-
-	return packet, nil
-}
-
-func (p *BinaryPacket) GetData() []byte {
-	return p.Data
-}
-
-// StringPacket represents an engine.io packet with UTF-8 string contents
-type StringPacket struct {
-	Type PacketType
-	Data *string
-}
-
-// GetType returns the engine.io packet type of the packet
-func (p *StringPacket) GetType() PacketType {
-	return p.Type
-}
-
-// Encode returns the encoded engine.io packet
-func (p *StringPacket) Encode(binary bool) ([]byte, error) {
-	encoded := fmt.Sprintf("%v", p.Type)
-
-	if p.Data != nil {
-		encoded += *p.Data
-	}
-
-	return []byte(encoded), nil
-}
-
-func (p *StringPacket) GetData() []byte {
-	if p.Data == nil {
-		return nil
-	}
-
-	return []byte(*p.Data)
-}
-
 // DecodeBinaryPacket returns a BinaryPacket from the contents of the byte array
-func DecodeBinaryPacket(packet []byte) (EnginePacket, error) {
+func DecodeBinaryPacket(packet []byte) (Packet, error) {
 	if packet == nil || len(packet) < 2 {
 		return &BinaryPacket{}, errors.New("Invalid packet")
 	}
@@ -106,7 +21,7 @@ func DecodeBinaryPacket(packet []byte) (EnginePacket, error) {
 }
 
 // DecodeStringPacket returns a StringPacket or BinaryPacket from the contents of the string
-func DecodeStringPacket(packet string) (EnginePacket, error) {
+func DecodeStringPacket(packet string) (Packet, error) {
 	if len(packet) < 1 {
 		return &StringPacket{}, errors.New("Invalid packet")
 	}
@@ -153,8 +68,8 @@ func DecodeStringPacket(packet string) (EnginePacket, error) {
 }
 
 // DecodeBinaryPayload returns an array of String or Binary packets from the contents of the byte array
-func DecodeBinaryPayload(payload []byte) ([]EnginePacket, error) {
-	var packets []EnginePacket
+func DecodeBinaryPayload(payload []byte) ([]Packet, error) {
+	var packets []Packet
 	remaining := payload
 
 	for {
@@ -222,12 +137,12 @@ func DecodeBinaryPayload(payload []byte) ([]EnginePacket, error) {
 }
 
 // DecodeStringPayload returns an array of String or Binary packets from the contents of the byte array
-func DecodeStringPayload(payload string) ([]EnginePacket, error) {
+func DecodeStringPayload(payload string) ([]Packet, error) {
 	if len(payload) == 0 {
 		return nil, errors.New("Invalid payload")
 	}
 
-	var packets []EnginePacket
+	var packets []Packet
 
 	remaining := payload
 
