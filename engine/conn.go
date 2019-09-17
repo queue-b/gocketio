@@ -16,8 +16,8 @@ type Conn struct {
 	socket  *websocket.Conn
 	id      string
 	Errors  chan error
-	Send    chan EnginePacket
-	Receive chan EnginePacket
+	Send    chan Packet
+	Receive chan Packet
 }
 
 func (conn *Conn) startEnginePing(pingInterval int) {
@@ -39,7 +39,7 @@ func (conn *Conn) startEnginePing(pingInterval int) {
 
 func (conn *Conn) receiveMessage() error {
 	t, message, err := conn.socket.ReadMessage()
-	var packet EnginePacket
+	var packet Packet
 
 	if err != nil {
 		return err
@@ -155,6 +155,7 @@ type openData struct {
 	PingTimeout  int
 }
 
+// Dial creates a Conn to the Engine.IO server located at address
 func Dial(address string) (*Conn, error) {
 	parsedAddress, err := url.Parse(address)
 
@@ -189,8 +190,8 @@ func Dial(address string) (*Conn, error) {
 	}
 
 	errs := make(chan error, 10000)
-	sends := make(chan EnginePacket, 10000)
-	receives := make(chan EnginePacket, 10000)
+	sends := make(chan Packet, 10000)
+	receives := make(chan Packet, 10000)
 
 	conn := &Conn{
 		socket:  socket,

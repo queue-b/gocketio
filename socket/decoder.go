@@ -32,7 +32,7 @@ func (d *BinaryDecoder) Reset() {
 
 // Decode returns either a Message, or ErrWaitingForMorePackets if additional Packets
 // are required to fully reconstruct a BinaryEvent or BinaryAck
-func (d *BinaryDecoder) Decode(packet engine.EnginePacket) (Packet, error) {
+func (d *BinaryDecoder) Decode(packet engine.Packet) (Packet, error) {
 	switch p := packet.(type) {
 	case *engine.BinaryPacket:
 		if p.Data != nil {
