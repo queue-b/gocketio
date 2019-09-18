@@ -1,21 +1,21 @@
 package gocket
 
 import (
+	"context"
 	"reflect"
 	"sync"
-
-	"github.com/queue-b/gocket/engine"
 
 	"github.com/queue-b/gocket/socket"
 )
 
+// Socket is a Socket.IO socket that can send messages to and
+// received messages from a namespace
 type Socket struct {
 	sync.Mutex
-	events     map[string]reflect.Value
-	acks       map[int]reflect.Value
-	ackCounter int
-	namespace  string
-	client     engine.Conn
+	events          map[string]reflect.Value
+	namespace       string
+	incomingPackets chan socket.Packet
+	outgoingPackets chan socket.Packet
 }
 
 // Namespace returns the namespace that this socket uses to send and receive
@@ -40,13 +40,18 @@ func (s *Socket) On(event string, handler interface{}) error {
 }
 
 // Off removes the event handler for the event
-func (s *Socket) Off(event string, handler interface{}) {
+func (s *Socket) Off(event string) {
 	s.Lock()
 	defer s.Unlock()
 	delete(s.events, event)
 }
 
-// Emit
+// Send raises a "message" event on the server
+func (s *Socket) Send(data ...interface{}) error {
+	return s.Emit("message", data...)
+}
+
+// Emit raises an event on the server
 func (s *Socket) Emit(event string, data ...interface{}) error {
 	message := socket.Packet{}
 
@@ -58,71 +63,47 @@ func (s *Socket) Emit(event string, data ...interface{}) error {
 	messageData[0] = event
 
 	if len(messageData) > 1 {
-		copy(messageData[:1], data)
+		copy(messageData[1:], data)
 	}
 
-	encodedData, err := message.Encode()
+	message.Data = messageData
 
-	if err != nil {
-		return err
-	}
-
-	first := string(encodedData[0])
-
-	p := engine.StringPacket{}
-	p.Type = engine.Message
-	p.Data = &first
-
-	s.client.Send <- &p
-
-	// Packet has attachments
-	if len(encodedData) > 1 {
-		for _, v := range encodedData[1:] {
-			b := engine.BinaryPacket{}
-			b.Type = engine.Message
-			b.Data = v
-
-			s.client.Send <- &b
-		}
-	}
+	s.outgoingPackets <- message
 
 	return nil
 }
 
-func (s *Socket) receiveMessages() {
-	d := socket.BinaryDecoder{}
-
+func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan socket.Packet) {
 	for {
-		packet := <-s.client.Receive
+		select {
+		case <-ctx.Done():
+			return
+		case packet := <-incomingPackets:
+			// TODO: Check if a packet has an ID (requires ack)
+			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
+				s.Lock()
+				defer s.Unlock()
 
-		m, err := d.Decode(packet)
+				data := packet.Data.([]interface{})
+				eventName := data[0].(string)
 
-		if err != nil {
-			continue
-		}
+				if handler, ok := s.events[eventName]; ok {
+					// Check if there are items in the data array
+					if len(data) > 1 {
+						data = data[1:]
 
-		// TODO: Check if namespaces match
-		if m.Type == socket.Event || m.Type == socket.BinaryEvent {
-			s.Lock()
-			defer s.Unlock()
+						args, err := convertUnmarshalledJSONToReflectValues(handler, data)
 
-			data := m.Data.([]interface{})
-			eventName := data[0].(string)
+						if err != nil {
+							continue
+						}
 
-			if handler, ok := s.events[eventName]; ok {
-				args, err := convertUnmarshalledJSONToReflectValues(handler, m.Data)
-
-				if err != nil {
-					continue
+						handler.Call(args)
+					} else {
+						handler.Call(nil)
+					}
 				}
-
-				handler.Call(args)
 			}
 		}
 	}
-}
-
-// EmitWithAck
-func (s *Socket) EmitWithAck(event string, ackHandler interface{}, data ...interface{}) {
-
 }
