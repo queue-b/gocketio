@@ -289,6 +289,22 @@ func TestDecodeBinaryPacketWithNamespaceWithoutAttachments(t *testing.T) {
 	}
 }
 
+func TestBinaryPacketWithInvalidEverything(t *testing.T) {
+	data := `5{""`
+
+	_, err := decodeMessage(data)
+
+	if err == nil {
+		t.Fatal("Expected error decoding invalid packet")
+	}
+
+	data = `3-	`
+
+	if err == nil {
+		t.Fatal("Expected error decoding invalid packet")
+	}
+}
+
 func TestDecodeBinaryPacketWithAttachments(t *testing.T) {
 	data := `51-/cool,23["a",{"_placeholder":true,"num":0}]`
 

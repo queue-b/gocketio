@@ -152,15 +152,12 @@ func decodeMessage(message string) (*Packet, error) {
 
 	decoded.Type = PacketType(t)
 
-	fmt.Printf("Type %v\n", decoded.Type)
-
 	// A Message is valid if it only includes a type
 	if len(message) == 1 {
 		return decoded, nil
 	}
 
 	remaining := message[1:]
-	fmt.Printf("Searching %v\n", remaining)
 
 	// Look for a dash; the characters (hopefully base 10 digits) before the dash
 	// indicate the number of binary attachments for this binary message
@@ -181,22 +178,20 @@ func decodeMessage(message string) (*Packet, error) {
 		}
 	}
 
-	fmt.Printf("Searching %v\n", remaining)
-
 	ni := strings.Index(remaining, ",")
+
+	// Socket.IO packets originating from socketio-client are array encoded
+	// but this isn't done in the socketio-parser library; it's done in the
+	// emit/send methods of socketio-client
 	fmt.Printf("Found comma at %v\n", ni)
 
-	if ni != -1 {
+	if ni != -1 && []rune(remaining)[0] == '/' {
 		decoded.Namespace = remaining[:ni]
-		fmt.Printf("Namespace %v", decoded.Namespace)
 
 		if ni < len(remaining)-1 {
 			remaining = remaining[ni+1:]
 		}
 	}
-
-	fmt.Printf("Searching %v\n", remaining)
-
 	// TODO: Don't assume UTF-8
 	var idBytes []rune
 
@@ -210,15 +205,16 @@ func decodeMessage(message string) (*Packet, error) {
 		idBytes = append(idBytes, v)
 	}
 
-	id, err := strconv.ParseInt(string(idBytes), 10, 64)
+	if len(idBytes) > 0 {
+		id, err := strconv.ParseInt(string(idBytes), 10, 64)
 
-	if err == nil {
-		usableID := int(id)
-		decoded.ID = &usableID
+		if err == nil {
+			usableID := int(id)
+			decoded.ID = &usableID
+		}
 	}
 
 	remaining = remaining[len(idBytes):]
-
 	err = json.Unmarshal([]byte(remaining), &decoded.Data)
 
 	if err != nil {
