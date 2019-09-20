@@ -200,5 +200,8 @@ func Dial(address string) (*Conn, error) {
 		Receive: receives,
 	}
 
+	go conn.receiveMessages(context.Background())
+	go conn.sendMessages(context.Background())
+
 	return conn, nil
 }
