@@ -3,6 +3,8 @@ package gocket
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/queue-b/gocket/socket"
@@ -41,6 +43,7 @@ func receiveFromEngine(ctx context.Context, manager *Manager, inputPackets chan 
 			}
 
 			if socket, ok := manager.sockets[ns]; ok {
+				fmt.Printf("Forwarding message to socket %v\n", ns)
 				select {
 				case <-ctx.Done():
 					return
@@ -116,17 +119,41 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	return nsSocket, nil
 }
 
-func Dial(address string) (*Manager, error) {
+func Dial(address string) (*Manager, *Socket, error) {
 	manager := &Manager{}
 
-	conn, err := engine.Dial(address)
+	parsedAddress, err := url.Parse(address)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	if parsedAddress.Path == "/" || parsedAddress.Path == "" {
+		newPath := strings.TrimRight(parsedAddress.Path, "/")
+		newPath += "/socket.io/"
+		parsedAddress.Path = newPath
+	}
+
+	conn, err := engine.Dial(parsedAddress.String())
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ctx, _ := context.WithCancel(context.Background())
 
 	manager.conn = conn
 	manager.outgoing = make(chan socket.Packet)
+	manager.sockets = make(map[string]*Socket)
 
-	return manager, nil
+	go receiveFromEngine(ctx, manager, conn.Receive)
+	go sendToEngine(ctx, manager, manager.outgoing, conn.Send)
+
+	s, err := manager.Namespace("/")
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return manager, s, nil
 }
