@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -108,6 +109,11 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	nsSocket.outgoingPackets = m.outgoing
 	nsSocket.namespace = namespace
 	nsSocket.incomingPackets = make(chan socket.Packet)
+
+	nsSocket.events = make(map[string]reflect.Value)
+	ctx, _ := context.WithCancel(context.Background())
+
+	go receiveFromManager(ctx, nsSocket, nsSocket.incomingPackets)
 
 	connectPacket := socket.Packet{}
 	connectPacket.Namespace = namespace
