@@ -40,7 +40,7 @@ type Packet struct {
 	Data            interface{}
 }
 
-func (p *Packet) String() string {
+func (p Packet) String() string {
 	ns := p.Namespace
 
 	if ns == "" {
