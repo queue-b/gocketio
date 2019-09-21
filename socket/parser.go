@@ -40,6 +40,28 @@ type Packet struct {
 	Data            interface{}
 }
 
+func (p *Packet) String() string {
+	ns := p.Namespace
+
+	if ns == "" {
+		ns = "/"
+	}
+
+	if p.Type == BinaryEvent || p.Type == BinaryAck {
+		if p.ID != nil {
+			return fmt.Sprintf("{Type:%v ID:%v Namespace:%v AttachmentCount:%v Data:%v}", messageTypeToMessageName[p.Type], *p.ID, ns, p.AttachmentCount, p.Data)
+		}
+
+		return fmt.Sprintf("{Type:%v Namespace:%v AttachmentCount:%v Data:%v}", messageTypeToMessageName[p.Type], ns, p.AttachmentCount, p.Data)
+	}
+
+	if p.ID != nil {
+		return fmt.Sprintf("{Type:%v Namespace:%v ID:%v Data:%v}", messageTypeToMessageName[p.Type], ns, *p.ID, p.Data)
+	}
+
+	return fmt.Sprintf("{Type:%v Namespace:%v Data:%v}", messageTypeToMessageName[p.Type], ns, p.Data)
+}
+
 var messageTypeToMessageName = map[PacketType]string{
 	Connect:     "Connect",
 	Disconnect:  "Disconnect",
