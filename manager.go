@@ -42,7 +42,7 @@ type Manager struct {
 	opts        *ManagerConfig
 }
 
-func handleDisconnects(manager *Manager, disconnects chan bool) {
+func handleDisconnect(manager *Manager, disconnects <-chan struct{}) {
 	for {
 		select {
 		case <-disconnects:
@@ -201,7 +201,7 @@ func (m *Manager) connectContext(ctx context.Context) error {
 
 	go receiveFromEngine(managerCtx, m, conn.Receive)
 	go sendToEngine(managerCtx, m, m.fromSockets, conn.Send)
-	go handleDisconnects(m, conn.Disconnects)
+	go handleDisconnect(m, conn.Disconnected())
 
 	_, err = m.Namespace("/")
 

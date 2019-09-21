@@ -15,13 +15,18 @@ import (
 
 // Conn is a connection to an Engine.IO connection
 type Conn struct {
-	socket      *websocket.Conn
-	id          string
-	Disconnects chan bool
-	Errors      chan error
-	Send        chan Packet
-	Receive     chan Packet
-	cancel      context.CancelFunc
+	socket     *websocket.Conn
+	id         string
+	disconnect chan struct{}
+	Errors     chan error
+	Send       chan Packet
+	Receive    chan Packet
+	cancel     context.CancelFunc
+}
+
+// Disconnected returns a channel that is closed when the Conn disconnects
+func (conn *Conn) Disconnected() <-chan struct{} {
+	return conn.disconnect
 }
 
 func (conn *Conn) startEnginePing(ctx context.Context, pingInterval time.Duration) {
@@ -118,8 +123,7 @@ func (conn *Conn) receiveMessages(ctx context.Context) {
 				if _, ok := err.(*websocket.CloseError); ok {
 					conn.cancel()
 					close(conn.Receive)
-					conn.Disconnects <- true
-					close(conn.Disconnects)
+					close(conn.disconnect)
 					return
 				}
 			}
@@ -214,16 +218,16 @@ func DialContext(ctx context.Context, address string) (*Conn, error) {
 	errs := make(chan error, 10000)
 	sends := make(chan Packet, 10000)
 	receives := make(chan Packet, 10000)
-	disconnects := make(chan bool, 10000)
+	disconnects := make(chan struct{}, 10000)
 	runCtx, cancel := context.WithCancel(ctx)
 
 	conn := &Conn{
-		socket:      socket,
-		Errors:      errs,
-		Send:        sends,
-		Receive:     receives,
-		Disconnects: disconnects,
-		cancel:      cancel,
+		socket:     socket,
+		Errors:     errs,
+		Send:       sends,
+		Receive:    receives,
+		disconnect: disconnects,
+		cancel:     cancel,
 	}
 
 	go conn.receiveMessages(runCtx)
