@@ -3,7 +3,6 @@ package socket
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -183,7 +182,6 @@ func decodeMessage(message string) (*Packet, error) {
 	// Socket.IO packets originating from socketio-client are array encoded
 	// but this isn't done in the socketio-parser library; it's done in the
 	// emit/send methods of socketio-client
-	fmt.Printf("Found comma at %v\n", ni)
 
 	if ni != -1 && []rune(remaining)[0] == '/' {
 		decoded.Namespace = remaining[:ni]
@@ -222,4 +220,9 @@ func decodeMessage(message string) (*Packet, error) {
 	}
 
 	return decoded, nil
+}
+
+// IsRootNamespace returns true if the namespace is / or "", false otherwise
+func IsRootNamespace(namespace string) bool {
+	return namespace != "" && namespace != "/"
 }
