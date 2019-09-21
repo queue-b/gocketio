@@ -19,15 +19,17 @@ import (
 
 // ManagerConfig contains configuration information for a Manager
 type ManagerConfig struct {
-	BackOff           backoff.BackOff
-	ConnectionTimeout time.Duration
+	BackOff             backoff.BackOff
+	ConnectionTimeout   time.Duration
+	AdditionalQueryArgs map[string]string
 }
 
 // DefaultManagerConfig returns a ManagerConfig with sane defaults
 func DefaultManagerConfig() *ManagerConfig {
 	return &ManagerConfig{
-		ConnectionTimeout: 20 * time.Second,
-		BackOff:           backoff.NewExponentialBackOff(),
+		ConnectionTimeout:   20 * time.Second,
+		BackOff:             backoff.NewExponentialBackOff(),
+		AdditionalQueryArgs: make(map[string]string),
 	}
 }
 
@@ -237,6 +239,16 @@ func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Mana
 		newPath := strings.TrimRight(parsedAddress.Path, "/")
 		newPath += "/socket.io/"
 		parsedAddress.Path = newPath
+	}
+
+	vals := parsedAddress.Query()
+
+	if cfg.AdditionalQueryArgs != nil {
+		for k, v := range cfg.AdditionalQueryArgs {
+			vals.Add(k, v)
+		}
+
+		parsedAddress.RawQuery = vals.Encode()
 	}
 
 	manager.fromSockets = make(chan socket.Packet)
