@@ -13,6 +13,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type Dialer func(address string) (*Conn, error)
+
+func ContextDialer(ctx context.Context, address string) Dialer {
+	return func(address string) (*Conn, error) {
+		return DialContext(ctx, address)
+	}
+}
+
 // Conn is a connection to an Engine.IO connection
 type Conn struct {
 	socket     *websocket.Conn
