@@ -2,6 +2,7 @@ package gocket
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -9,21 +10,36 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cenkalti/backoff"
+
 	"github.com/queue-b/gocket/socket"
 
 	"github.com/queue-b/gocket/engine"
 )
 
+// ManagerConfig contains configuration information for a Manager
+type ManagerConfig struct {
+	BackOff           backoff.BackOff
+	ConnectionTimeout time.Duration
+}
+
+// DefaultManagerConfig returns a ManagerConfig with sane defaults
+func DefaultManagerConfig() *ManagerConfig {
+	return &ManagerConfig{
+		ConnectionTimeout: 20 * time.Second,
+		BackOff:           backoff.NewExponentialBackOff(),
+	}
+}
+
 type Manager struct {
 	sync.Mutex
-	address           *url.URL
-	sockets           map[string]*Socket
-	conn              *engine.Conn
-	outgoing          chan socket.Packet
-	ctx               context.Context
-	cancel            context.CancelFunc
-	reconnectInterval time.Duration
-	reconnects        chan time.Duration
+	address     *url.URL
+	sockets     map[string]*Socket
+	conn        *engine.Conn
+	fromSockets chan socket.Packet
+	socketCtx   context.Context
+	cancel      context.CancelFunc
+	opts        *ManagerConfig
 }
 
 func handleDisconnects(ctx context.Context, manager *Manager, disconnects chan bool) {
@@ -34,34 +50,10 @@ func handleDisconnects(ctx context.Context, manager *Manager, disconnects chan b
 		case <-disconnects:
 			manager.cancel()
 			manager.conn = nil
-			manager.reconnects <- manager.reconnectInterval
-		}
-	}
-}
+			err := backoff.Retry(connectContext(ctx, manager), backoff.WithContext(manager.opts.BackOff, ctx))
 
-func reconnectToServer(ctx context.Context, manager *Manager, reconnects chan time.Duration) {
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("ctx.Done, killing manager.reconnectToServer")
-			return
-		case interval := <-reconnects:
-			if !manager.Connected() {
-				fmt.Printf("Waiting %v for reconnect\n", interval)
-				t := time.NewTimer(interval)
-
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					_, _, err := manager.connectContext(ctx)
-
-					if err != nil {
-						fmt.Println(err)
-						manager.reconnectInterval = manager.reconnectInterval * 2
-						reconnects <- manager.reconnectInterval
-					}
-				}
+			if err != nil {
+				fmt.Println(err)
 			}
 		}
 	}
@@ -172,20 +164,20 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	}
 
 	nsSocket := &Socket{}
-	nsSocket.outgoingPackets = m.outgoing
+	nsSocket.outgoingPackets = m.fromSockets
 	nsSocket.namespace = namespace
 	nsSocket.incomingPackets = make(chan socket.Packet)
 
 	nsSocket.events = make(map[string]reflect.Value)
 
-	go receiveFromManager(m.ctx, nsSocket, nsSocket.incomingPackets)
+	go receiveFromManager(m.socketCtx, nsSocket, nsSocket.incomingPackets)
 
 	if !socket.IsRootNamespace(namespace) {
 		connectPacket := socket.Packet{}
 		connectPacket.Namespace = namespace
 		connectPacket.Type = socket.Connect
 
-		m.outgoing <- connectPacket
+		m.fromSockets <- connectPacket
 	}
 
 	m.sockets[namespace] = nsSocket
@@ -193,42 +185,52 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	return nsSocket, nil
 }
 
-func (m *Manager) connectContext(ctx context.Context) (*Manager, *Socket, error) {
+func (m *Manager) connectContext(ctx context.Context) error {
 	managerCtx, cancel := context.WithCancel(ctx)
 
 	conn, err := engine.DialContext(managerCtx, m.address.String())
 
 	if err != nil {
 		cancel()
-		return nil, nil, err
+		return err
 	}
 
 	m.conn = conn
-	m.ctx = ctx
+	m.socketCtx = ctx
 	m.cancel = cancel
 
 	go receiveFromEngine(managerCtx, m, conn.Receive)
-	go sendToEngine(managerCtx, m, m.outgoing, conn.Send)
+	go sendToEngine(managerCtx, m, m.fromSockets, conn.Send)
 	go handleDisconnects(managerCtx, m, conn.Disconnects)
 
-	s, err := m.Namespace("/")
+	_, err = m.Namespace("/")
 
 	if err != nil {
 		cancel()
-		return nil, nil, err
+		return err
 	}
 
-	return m, s, nil
+	return nil
+}
+
+func connectContext(ctx context.Context, m *Manager) func() error {
+	return func() error {
+		return m.connectContext(ctx)
+	}
 }
 
 // DialContext attempts to connect to the Socket.IO server at address
-func DialContext(ctx context.Context, address string) (*Manager, *Socket, error) {
+func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Manager, error) {
+	if cfg == nil {
+		return nil, errors.New("Missing config")
+	}
+
 	manager := &Manager{}
 
 	parsedAddress, err := url.Parse(address)
 
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if parsedAddress.Path == "/" || parsedAddress.Path == "" {
@@ -237,13 +239,12 @@ func DialContext(ctx context.Context, address string) (*Manager, *Socket, error)
 		parsedAddress.Path = newPath
 	}
 
-	manager.outgoing = make(chan socket.Packet)
+	manager.fromSockets = make(chan socket.Packet)
 	manager.sockets = make(map[string]*Socket)
-	manager.reconnects = make(chan time.Duration, 10)
 	manager.address = parsedAddress
-	manager.reconnectInterval = 500 * time.Millisecond
+	manager.opts = cfg
 
-	go reconnectToServer(ctx, manager, manager.reconnects)
+	err = backoff.Retry(connectContext(ctx, manager), backoff.WithContext(cfg.BackOff, ctx))
 
-	return manager.connectContext(ctx)
+	return manager, nil
 }
