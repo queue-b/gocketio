@@ -224,5 +224,9 @@ func decodeMessage(message string) (*Packet, error) {
 
 // IsRootNamespace returns true if the namespace is / or "", false otherwise
 func IsRootNamespace(namespace string) bool {
-	return namespace != "" && namespace != "/"
+	if namespace == "" || namespace == "/" {
+		return true
+	}
+
+	return false
 }

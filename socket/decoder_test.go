@@ -333,3 +333,17 @@ func TestDecodeBinaryPacketWithAttachments(t *testing.T) {
 		}
 	}
 }
+
+func TestIsRootNamespace(t *testing.T) {
+	isRoot := IsRootNamespace("/")
+
+	if isRoot != true {
+		t.Fatal("/ is root namespace")
+	}
+
+	isRoot = IsRootNamespace("")
+
+	if isRoot != true {
+		t.Fatal("Empty string is root")
+	}
+}
