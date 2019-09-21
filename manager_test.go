@@ -3,6 +3,7 @@ package gocket
 import (
 	"context"
 	"errors"
+	"net/url"
 	"reflect"
 	"testing"
 
@@ -182,6 +183,38 @@ func TestManagerNamespaceWithNewSocket(t *testing.T) {
 
 	if len(m.fromSockets) != 1 {
 		t.Fatal("Expected manager.Namespace to send a connect message")
+	}
+}
+
+func TestConnectContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	invoked := make(chan struct{}, 1)
+
+	addr, err := url.Parse("http://test.com")
+
+	if err != nil {
+		t.Errorf("Invalid address %v\n", err)
+	}
+
+	m := &Manager{
+		address:   addr,
+		socketCtx: ctx,
+		sockets:   make(map[string]*Socket),
+	}
+
+	err = connectContext(ctx, m, func(address string) (*engine.Conn, error) {
+		invoked <- struct{}{}
+		return &engine.Conn{
+			Send:    make(chan engine.Packet, 1),
+			Receive: make(chan engine.Packet, 1),
+		}, nil
+	})
+
+	cancel()
+
+	if err != nil {
+		t.Fatalf("ConnectContext failed with %v\n", err)
 	}
 
 }

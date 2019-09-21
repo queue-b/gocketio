@@ -185,10 +185,10 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	return nsSocket, nil
 }
 
-func connectContext(ctx context.Context, m *Manager) error {
+func connectContext(ctx context.Context, m *Manager, dialer engine.Dialer) error {
 	managerCtx, cancel := context.WithCancel(ctx)
 
-	conn, err := engine.DialContext(managerCtx, m.address.String())
+	conn, err := dialer(m.address.String())
 
 	if err != nil {
 		cancel()
@@ -215,7 +215,7 @@ func connectContext(ctx context.Context, m *Manager) error {
 
 func reconnect(ctx context.Context, m *Manager) func() error {
 	return func() error {
-		return connectContext(ctx, m)
+		return connectContext(ctx, m, engine.ContextDialer(ctx, m.address.String()))
 	}
 }
 
