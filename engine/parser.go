@@ -73,7 +73,6 @@ func DecodeBinaryPayload(payload []byte) ([]Packet, error) {
 	remaining := payload
 
 	for {
-		fmt.Println(len(remaining))
 		stringLength := ""
 
 		if len(remaining) == 0 {
@@ -153,22 +152,17 @@ func DecodeStringPayload(payload string) ([]Packet, error) {
 			break
 		}
 
-		fmt.Println("Index", idx)
-
 		length, err := strconv.ParseInt(remaining[0:idx], 10, 32)
 
 		if err != nil {
 			return nil, err
 		}
 
-		fmt.Println("Length", length)
-
 		msgStart := idx + 1
 		msgEnd := msgStart + int(length)
 
 		msg := remaining[msgStart:msgEnd]
 
-		fmt.Println("Message", msg)
 		if int(length) != len(msg) {
 			return nil, errors.New("Invalid payload")
 		}
