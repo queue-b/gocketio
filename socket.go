@@ -2,6 +2,7 @@ package gocket
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sync"
 
@@ -77,12 +78,17 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 	for {
 		select {
 		case <-ctx.Done():
+			fmt.Println("ctx.Done, Killing socket receiveFromManager")
 			return
-		case packet := <-incomingPackets:
+		case packet, ok := <-incomingPackets:
+			if !ok {
+				fmt.Println("Invalid read, killing socket receiveFromManager")
+				return
+			}
+
 			// TODO: Check if a packet has an ID (requires ack)
 			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
 				s.Lock()
-				defer s.Unlock()
 
 				data := packet.Data.([]interface{})
 				eventName := data[0].(string)
@@ -103,6 +109,8 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 						handler.Call(nil)
 					}
 				}
+
+				s.Unlock()
 			}
 		}
 	}
