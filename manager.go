@@ -42,18 +42,20 @@ type Manager struct {
 	opts        *ManagerConfig
 }
 
-func handleDisconnects(ctx context.Context, manager *Manager, disconnects chan bool) {
+func handleDisconnects(manager *Manager, disconnects chan bool) {
 	for {
 		select {
-		case <-ctx.Done():
-			return
-		case <-disconnects:
+		case _, ok := <-disconnects:
 			manager.cancel()
 			manager.conn = nil
-			err := backoff.Retry(connectContext(ctx, manager), backoff.WithContext(manager.opts.BackOff, ctx))
+			err := backoff.Retry(connectContext(manager.socketCtx, manager), backoff.WithContext(manager.opts.BackOff, manager.socketCtx))
 
 			if err != nil {
 				fmt.Println(err)
+			}
+
+			if !ok {
+				return
 			}
 		}
 	}
@@ -201,7 +203,7 @@ func (m *Manager) connectContext(ctx context.Context) error {
 
 	go receiveFromEngine(managerCtx, m, conn.Receive)
 	go sendToEngine(managerCtx, m, m.fromSockets, conn.Send)
-	go handleDisconnects(managerCtx, m, conn.Disconnects)
+	go handleDisconnects(m, conn.Disconnects)
 
 	_, err = m.Namespace("/")
 

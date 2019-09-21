@@ -119,6 +119,7 @@ func (conn *Conn) receiveMessages(ctx context.Context) {
 					conn.cancel()
 					close(conn.Receive)
 					conn.Disconnects <- true
+					close(conn.Disconnects)
 					return
 				}
 			}
