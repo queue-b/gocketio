@@ -3,7 +3,9 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -13,16 +15,17 @@ import (
 
 // Conn is a connection to an Engine.IO connection
 type Conn struct {
-	socket  *websocket.Conn
-	id      string
-	Errors  chan error
-	Send    chan Packet
-	Receive chan Packet
+	socket      *websocket.Conn
+	id          string
+	Disconnects chan bool
+	Errors      chan error
+	Send        chan Packet
+	Receive     chan Packet
+	cancel      context.CancelFunc
 }
 
-func (conn *Conn) startEnginePing(pingInterval int) {
-	pingDuration := time.Duration(pingInterval) * time.Millisecond
-	t := time.NewTicker(pingDuration)
+func (conn *Conn) startEnginePing(ctx context.Context, pingInterval time.Duration) {
+	t := time.NewTicker(pingInterval)
 
 	p := &StringPacket{Type: Ping}
 
@@ -30,6 +33,8 @@ func (conn *Conn) startEnginePing(pingInterval int) {
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
 		case <-t.C:
 			p = &StringPacket{Type: Ping}
 			conn.Send <- p
@@ -37,7 +42,7 @@ func (conn *Conn) startEnginePing(pingInterval int) {
 	}
 }
 
-func (conn *Conn) receiveMessage() error {
+func (conn *Conn) receiveFromTransport(ctx context.Context) error {
 	t, message, err := conn.socket.ReadMessage()
 	var packet Packet
 
@@ -47,7 +52,7 @@ func (conn *Conn) receiveMessage() error {
 
 	switch t {
 	case websocket.CloseMessage:
-		fmt.Println("Received ws Close message")
+		return &websocket.CloseError{}
 	case websocket.PongMessage:
 		fmt.Println("Received ws Pong message")
 	case websocket.PingMessage:
@@ -80,7 +85,7 @@ func (conn *Conn) receiveMessage() error {
 			}
 
 			conn.id = data.SID
-			go conn.startEnginePing(data.PingInterval)
+			go conn.startEnginePing(ctx, time.Duration(data.PingInterval)*time.Millisecond)
 		}
 	case Message:
 		conn.Receive <- packet
@@ -105,18 +110,27 @@ func (conn *Conn) receiveMessages(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			err := conn.receiveMessage()
+			err := conn.receiveFromTransport(ctx)
 
 			if err != nil {
-				fmt.Printf("Error receiving %v", err)
 				conn.Errors <- err
+
+				if _, ok := err.(*websocket.CloseError); ok {
+					conn.cancel()
+					close(conn.Receive)
+					conn.Disconnects <- true
+					return
+				}
 			}
 		}
 	}
 }
 
-func (conn *Conn) sendMessage() error {
-	message := <-conn.Send
+func (conn *Conn) sendToTransport(message Packet) error {
+	if message == nil {
+		return errors.New("Cannot send nil message")
+	}
+
 	data, err := message.Encode(true)
 
 	if err != nil {
@@ -139,9 +153,16 @@ func (conn *Conn) sendMessages(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			err := conn.sendMessage()
+			message, ok := <-conn.Send
+
+			if !ok {
+				return
+			}
+
+			err := conn.sendToTransport(message)
 
 			if err != nil {
+				// TODO: Check for special websocket error
 				fmt.Printf("Error sending %v", err)
 				conn.Errors <- err
 			}
@@ -155,8 +176,8 @@ type openData struct {
 	PingTimeout  int
 }
 
-// Dial creates a Conn to the Engine.IO server located at address
-func Dial(address string) (*Conn, error) {
+// DialContext creates a Conn to the Engine.IO server located at address
+func DialContext(ctx context.Context, address string) (*Conn, error) {
 	parsedAddress, err := url.Parse(address)
 
 	if err != nil {
@@ -178,12 +199,12 @@ func Dial(address string) (*Conn, error) {
 
 	fmt.Println("Dialing", parsedAddress.String())
 
-	socket, _, err := websocket.DefaultDialer.Dial(parsedAddress.String(), nil)
+	dialer := websocket.DefaultDialer
+	dialer.NetDial = func(network, address string) (net.Conn, error) {
+		return net.DialTimeout(network, address, 200*time.Millisecond)
+	}
 
-	socket.SetCloseHandler(func(code int, message string) error {
-		fmt.Println("Closing", message)
-		return nil
-	})
+	socket, _, err := websocket.DefaultDialer.DialContext(ctx, parsedAddress.String(), nil)
 
 	if err != nil {
 		return nil, err
@@ -192,16 +213,20 @@ func Dial(address string) (*Conn, error) {
 	errs := make(chan error, 10000)
 	sends := make(chan Packet, 10000)
 	receives := make(chan Packet, 10000)
+	disconnects := make(chan bool, 10000)
+	runCtx, cancel := context.WithCancel(ctx)
 
 	conn := &Conn{
-		socket:  socket,
-		Errors:  errs,
-		Send:    sends,
-		Receive: receives,
+		socket:      socket,
+		Errors:      errs,
+		Send:        sends,
+		Receive:     receives,
+		Disconnects: disconnects,
+		cancel:      cancel,
 	}
 
-	go conn.receiveMessages(context.Background())
-	go conn.sendMessages(context.Background())
+	go conn.receiveMessages(runCtx)
+	go conn.sendMessages(runCtx)
 
 	return conn, nil
 }
