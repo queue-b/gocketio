@@ -335,7 +335,7 @@ func TestDecodeBinaryPacketWithAttachments(t *testing.T) {
 }
 
 func TestDecodeStringConnectWithNamespaceNoData(t *testing.T) {
-	data := `0/flight`
+	data := `0/flight,`
 
 	p, err := decodeMessage(data)
 

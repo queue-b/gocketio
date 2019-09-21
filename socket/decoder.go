@@ -181,38 +181,17 @@ func decodeMessage(message string) (*Packet, error) {
 	// but this isn't done in the socketio-parser library; it's done in the
 	// emit/send methods of socketio-client
 	namespaceEnd := strings.Index(remaining, ",")
-	dataStart := strings.Index(remaining, "[")
 
-	hasNamespace := []rune(remaining)[0] == '/'
+	hasNamespace := []rune(remaining)[0] == '/' && namespaceEnd > -1
 
 	if hasNamespace {
-		hasData := dataStart > -1
-		hasID := false
+		decoded.Namespace = remaining[:namespaceEnd]
 
-		if hasData {
-			hasID = namespaceEnd > -1 && namespaceEnd < dataStart
-		} else {
-			hasID = namespaceEnd > -1
+		if namespaceEnd == len(remaining)-1 {
+			return decoded, nil
 		}
 
-		if hasID {
-			decoded.Namespace = remaining[:namespaceEnd]
-
-			if namespaceEnd < len(remaining)-1 {
-				remaining = remaining[namespaceEnd+1:]
-			}
-		} else {
-			if hasData {
-				decoded.Namespace = remaining[:dataStart]
-
-				if dataStart < len(remaining) {
-					remaining = remaining[dataStart:]
-				}
-			} else {
-				decoded.Namespace = remaining
-				return decoded, nil
-			}
-		}
+		remaining = remaining[namespaceEnd+1:]
 	}
 
 	// TODO: Don't assume UTF-8
