@@ -45,7 +45,7 @@ type Manager struct {
 func handleDisconnects(manager *Manager, disconnects chan bool) {
 	for {
 		select {
-		case _, ok := <-disconnects:
+		case <-disconnects:
 			manager.cancel()
 			manager.conn = nil
 			err := backoff.Retry(connectContext(manager.socketCtx, manager), backoff.WithContext(manager.opts.BackOff, manager.socketCtx))
@@ -54,9 +54,7 @@ func handleDisconnects(manager *Manager, disconnects chan bool) {
 				fmt.Println(err)
 			}
 
-			if !ok {
-				return
-			}
+			return
 		}
 	}
 }
