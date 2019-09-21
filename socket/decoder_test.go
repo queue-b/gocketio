@@ -334,6 +334,20 @@ func TestDecodeBinaryPacketWithAttachments(t *testing.T) {
 	}
 }
 
+func TestDecodeStringConnectWithNamespaceNoData(t *testing.T) {
+	data := `0/flight`
+
+	p, err := decodeMessage(data)
+
+	if err != nil {
+		t.Fatal("Unable to decode valid message")
+	}
+
+	if p.Type != Connect {
+		t.Fatalf("Invalid type, expected %v got %v", Connect, p.Type)
+	}
+}
+
 func TestIsRootNamespace(t *testing.T) {
 	isRoot := IsRootNamespace("/")
 

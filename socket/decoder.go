@@ -177,19 +177,44 @@ func decodeMessage(message string) (*Packet, error) {
 		}
 	}
 
-	ni := strings.Index(remaining, ",")
-
 	// Socket.IO packets originating from socketio-client are array encoded
 	// but this isn't done in the socketio-parser library; it's done in the
 	// emit/send methods of socketio-client
+	namespaceEnd := strings.Index(remaining, ",")
+	dataStart := strings.Index(remaining, "[")
 
-	if ni != -1 && []rune(remaining)[0] == '/' {
-		decoded.Namespace = remaining[:ni]
+	hasNamespace := []rune(remaining)[0] == '/'
 
-		if ni < len(remaining)-1 {
-			remaining = remaining[ni+1:]
+	if hasNamespace {
+		hasData := dataStart > -1
+		hasID := false
+
+		if hasData {
+			hasID = namespaceEnd > -1 && namespaceEnd < dataStart
+		} else {
+			hasID = namespaceEnd > -1
+		}
+
+		if hasID {
+			decoded.Namespace = remaining[:namespaceEnd]
+
+			if namespaceEnd < len(remaining)-1 {
+				remaining = remaining[namespaceEnd+1:]
+			}
+		} else {
+			if hasData {
+				decoded.Namespace = remaining[:dataStart]
+
+				if dataStart < len(remaining) {
+					remaining = remaining[dataStart:]
+				}
+			} else {
+				decoded.Namespace = remaining
+				return decoded, nil
+			}
 		}
 	}
+
 	// TODO: Don't assume UTF-8
 	var idBytes []rune
 
