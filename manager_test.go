@@ -134,3 +134,54 @@ func TestHandleDisconnectReconnectError(t *testing.T) {
 		t.Fatal("Expected reconnect function to be fail")
 	}
 }
+
+func TestManagerNamespaceWithExistingSocket(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	m := &Manager{
+		sockets:   make(map[string]*Socket),
+		cancel:    cancel,
+		socketCtx: ctx,
+	}
+
+	s := &Socket{}
+	m.sockets["/"] = s
+
+	ns, err := m.Namespace("/")
+
+	if err != nil {
+		t.Fatalf("Expected manager.Namespace to not return an error %v\n", err)
+	}
+
+	if s != ns {
+		t.Fatal("Expected manager.Namespace to return existing socket")
+	}
+}
+
+func TestManagerNamespaceWithNewSocket(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	fromSockets := make(chan socket.Packet, 1)
+
+	m := &Manager{
+		sockets:     make(map[string]*Socket),
+		cancel:      cancel,
+		socketCtx:   ctx,
+		fromSockets: fromSockets,
+	}
+
+	ns, err := m.Namespace("/fancy")
+
+	if err != nil {
+		t.Fatalf("Expected manager.Namespace to not return an error %v\n", err)
+	}
+
+	if ns == nil {
+		t.Fatal("Expected manager.Namespace to return a valid socket")
+	}
+
+	if len(m.fromSockets) != 1 {
+		t.Fatal("Expected manager.Namespace to send a connect message")
+	}
+
+}
