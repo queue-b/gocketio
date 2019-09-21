@@ -2,8 +2,11 @@ package gocket
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
+
+	"github.com/cenkalti/backoff"
 
 	"github.com/queue-b/gocket/engine"
 
@@ -80,6 +83,54 @@ func TestReceiveFromEngine(t *testing.T) {
 	}
 }
 
-func TestManagerNamespace(t *testing.T) {
+func TestHandleDisconnect(t *testing.T) {
+	disconnects := make(chan struct{})
 
+	invoked := make(chan struct{}, 1)
+
+	reconnect := func() error {
+		invoked <- struct{}{}
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	manager := &Manager{}
+	manager.cancel = cancel
+	manager.socketCtx = ctx
+	manager.opts = DefaultManagerConfig()
+
+	go handleDisconnect(manager, reconnect, disconnects)
+
+	disconnects <- struct{}{}
+
+	if len(invoked) != 1 {
+		t.Fatal("Expected reconnect function to be invoked at least 1 time")
+	}
+
+}
+
+func TestHandleDisconnectReconnectError(t *testing.T) {
+	disconnects := make(chan struct{})
+
+	invoked := make(chan struct{}, 1)
+
+	reconnect := func() error {
+		return backoff.Permanent(errors.New("Real bad stuff"))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	manager := &Manager{}
+	manager.cancel = cancel
+	manager.socketCtx = ctx
+	manager.opts = DefaultManagerConfig()
+
+	go handleDisconnect(manager, reconnect, disconnects)
+
+	disconnects <- struct{}{}
+
+	if len(invoked) != 0 {
+		t.Fatal("Expected reconnect function to be fail")
+	}
 }

@@ -42,13 +42,13 @@ type Manager struct {
 	opts        *ManagerConfig
 }
 
-func handleDisconnect(manager *Manager, disconnects <-chan struct{}) {
+func handleDisconnect(manager *Manager, reconnectFunction func() error, disconnects <-chan struct{}) {
 	for {
 		select {
 		case <-disconnects:
 			manager.cancel()
 			manager.conn = nil
-			err := backoff.Retry(connectContext(manager.socketCtx, manager), backoff.WithContext(manager.opts.BackOff, manager.socketCtx))
+			err := backoff.Retry(reconnectFunction, backoff.WithContext(manager.opts.BackOff, manager.socketCtx))
 
 			if err != nil {
 				fmt.Println(err)
@@ -185,7 +185,7 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	return nsSocket, nil
 }
 
-func (m *Manager) connectContext(ctx context.Context) error {
+func connectContext(ctx context.Context, m *Manager) error {
 	managerCtx, cancel := context.WithCancel(ctx)
 
 	conn, err := engine.DialContext(managerCtx, m.address.String())
@@ -201,7 +201,7 @@ func (m *Manager) connectContext(ctx context.Context) error {
 
 	go receiveFromEngine(managerCtx, m, conn.Receive)
 	go sendToEngine(managerCtx, m, m.fromSockets, conn.Send)
-	go handleDisconnect(m, conn.Disconnected())
+	go handleDisconnect(m, reconnect(ctx, m), conn.Disconnected())
 
 	_, err = m.Namespace("/")
 
@@ -213,9 +213,9 @@ func (m *Manager) connectContext(ctx context.Context) error {
 	return nil
 }
 
-func connectContext(ctx context.Context, m *Manager) func() error {
+func reconnect(ctx context.Context, m *Manager) func() error {
 	return func() error {
-		return m.connectContext(ctx)
+		return connectContext(ctx, m)
 	}
 }
 
@@ -244,7 +244,7 @@ func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Mana
 	manager.address = parsedAddress
 	manager.opts = cfg
 
-	err = backoff.Retry(connectContext(ctx, manager), backoff.WithContext(cfg.BackOff, ctx))
+	err = backoff.Retry(reconnect(ctx, manager), backoff.WithContext(cfg.BackOff, ctx))
 
 	return manager, nil
 }
