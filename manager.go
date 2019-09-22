@@ -115,12 +115,14 @@ func sendToEngine(ctx context.Context, manager *Manager, outputPackets chan sock
 				return
 			}
 
-			encodedData, err := packet.Encode()
+			encodedData, err := packet.Encode(manager.conn.SupportsBinary())
 
 			if err != nil || len(encodedData) == 0 {
 				continue
 			}
 
+			// The first encoded element will always be a string,
+			// even if the packet has binary
 			first := string(encodedData[0])
 
 			p := engine.StringPacket{}
