@@ -141,6 +141,8 @@ func (s *Socket) raiseAck(id int, data interface{}) error {
 
 	handler(id, data)
 
+	delete(s.acks, id)
+
 	return nil
 }
 
