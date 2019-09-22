@@ -32,6 +32,11 @@ type Conn struct {
 	cancel     context.CancelFunc
 }
 
+// ID returns the remote ID assigned to this connection
+func (conn *Conn) ID() string {
+	return conn.id
+}
+
 // Disconnected returns a channel that is closed when the Conn disconnects
 func (conn *Conn) Disconnected() <-chan struct{} {
 	return conn.disconnect

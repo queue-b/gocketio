@@ -44,6 +44,11 @@ func (s *Socket) State() SocketState {
 	return s.currentState
 }
 
+// ID returns the ID of the socket
+func (s *Socket) ID() string {
+	return s.id
+}
+
 // Namespace returns the namespace that this socket uses to send and receive
 // events from
 func (s *Socket) Namespace() string {

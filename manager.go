@@ -174,6 +174,7 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 
 	nsSocket.events = make(map[string]reflect.Value)
 	nsSocket.acks = make(map[int]AckFunc)
+	nsSocket.id = fmt.Sprintf("%v#%v", namespace, m.conn.ID())
 
 	go receiveFromManager(m.socketCtx, nsSocket, nsSocket.incomingPackets)
 
