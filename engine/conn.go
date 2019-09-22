@@ -37,6 +37,10 @@ func (conn *Conn) Disconnected() <-chan struct{} {
 	return conn.disconnect
 }
 
+// SupportsBinary returns true if the underlying connection supports sending raw binary data (bytes),
+// false otherwise
+func (conn *Conn) SupportsBinary() bool { return true }
+
 func (conn *Conn) startEnginePing(ctx context.Context, pingInterval time.Duration) {
 	t := time.NewTicker(pingInterval)
 
