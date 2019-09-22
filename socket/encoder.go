@@ -11,6 +11,85 @@ type BinaryPlaceholder struct {
 	Number      int  `json:"num"`
 }
 
+func hasBinary(data interface{}) bool {
+	if data == nil {
+		return false
+	}
+
+	switch data.(type) {
+	case []byte:
+		return true
+	case int:
+		return false
+	case int8:
+		return false
+	case int16:
+		return false
+	case int32:
+		return false
+	case int64:
+		return false
+	case uint:
+		return false
+	case uint8:
+		return false
+	case uint16:
+		return false
+	case uint32:
+		return false
+	case uint64:
+		return false
+	case float32:
+		return false
+	case float64:
+		return false
+	case bool:
+		return false
+	case complex64:
+		return false
+	case complex128:
+		return false
+	case string:
+		return false
+	default:
+		rt := reflect.TypeOf(data)
+		rv := reflect.ValueOf(data)
+
+		switch rt.Kind() {
+		case reflect.Slice:
+			fallthrough
+		case reflect.Array:
+			switch rt.Elem().Kind() {
+			case reflect.Uint8:
+				return true
+			default:
+				var beforeEncoding []interface{}
+
+				// Convert fixed length array to []interface{}
+				for i := 0; i < rv.Len(); i++ {
+					beforeEncoding = append(beforeEncoding, rv.Index(i).Interface())
+				}
+
+				for _, v := range beforeEncoding {
+					if hasBinary(v) {
+						return true
+					}
+				}
+
+				return false
+			}
+		case reflect.Struct:
+			for i := 0; i < rt.NumField(); i++ {
+				if hasBinary(rv.Field(i).Interface()) {
+					return true
+				}
+			}
+		}
+
+		return false
+	}
+}
+
 func replaceByteArraysWithPlaceholders(data interface{}, attachments [][]byte) (interface{}, [][]byte) {
 	switch d := data.(type) {
 	// For []byte, generate a placeholder and append the []byte to the buffers array
@@ -116,7 +195,7 @@ func replaceByteArraysWithPlaceholders(data interface{}, attachments [][]byte) (
 
 			return encoded, attachments
 		}
-	}
 
-	return nil, nil
+		return nil, nil
+	}
 }
