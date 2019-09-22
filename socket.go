@@ -2,6 +2,7 @@ package gocket
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -131,6 +132,28 @@ func (s *Socket) raiseEvent(eventName string, data []interface{}) error {
 	return nil
 }
 
+func (s *Socket) raiseAck(id int, data interface{}) error {
+	var handler AckFunc
+	var ok bool
+	if handler, ok = s.acks[id]; !ok {
+		return errors.New("Missing ack handler")
+	}
+
+	handler(id, data)
+
+	return nil
+}
+
+func (s *Socket) sendAck(id int) {
+	p := socket.Packet{
+		Type:      socket.Ack,
+		ID:        &id,
+		Namespace: s.namespace,
+	}
+
+	s.outgoingPackets <- p
+}
+
 func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan socket.Packet) {
 	for {
 		select {
@@ -143,7 +166,6 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 				return
 			}
 
-			// TODO: Check if a packet has an ID (requires ack)
 			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
 				data := packet.Data.([]interface{})
 				eventName := data[0].(string)
@@ -153,6 +175,14 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 				if err != nil {
 					continue
 				}
+
+				if packet.ID != nil {
+					s.sendAck(*packet.ID)
+				}
+			}
+
+			if packet.Type == socket.Ack || packet.Type == socket.BinaryAck {
+				s.raiseAck(*packet.ID, packet.Data)
 			}
 		}
 	}

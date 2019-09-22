@@ -171,6 +171,7 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	nsSocket.incomingPackets = make(chan socket.Packet)
 
 	nsSocket.events = make(map[string]reflect.Value)
+	nsSocket.acks = make(map[int]AckFunc)
 
 	go receiveFromManager(m.socketCtx, nsSocket, nsSocket.incomingPackets)
 
