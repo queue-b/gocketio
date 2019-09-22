@@ -9,14 +9,18 @@ import (
 	"github.com/queue-b/gocket/socket"
 )
 
+type AckFunc func(id int, data interface{})
+
 // Socket is a Socket.IO socket that can send messages to and
 // received messages from a namespace
 type Socket struct {
 	sync.Mutex
 	events          map[string]reflect.Value
+	acks            map[int]AckFunc
 	namespace       string
 	incomingPackets chan socket.Packet
 	outgoingPackets chan socket.Packet
+	ackCounter      int
 }
 
 // Namespace returns the namespace that this socket uses to send and receive
@@ -74,6 +78,59 @@ func (s *Socket) Emit(event string, data ...interface{}) error {
 	return nil
 }
 
+// EmitWithAck raises an event on the server, and registers a callback that is invoked
+// when the server acknowledges receipt
+func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{}) error {
+	s.Lock()
+	defer s.Unlock()
+
+	message := socket.Packet{}
+	message.Type = socket.Event
+	message.Namespace = s.namespace
+
+	messageData := make([]interface{}, len(data)+1)
+	messageData[0] = event
+
+	if len(messageData) > 1 {
+		copy(messageData[1:], data)
+	}
+
+	message.Data = messageData
+	ackCount := s.ackCounter
+	message.ID = &ackCount
+	s.ackCounter++
+
+	s.acks[ackCount] = ackFunc
+
+	s.outgoingPackets <- message
+
+	return nil
+}
+
+func (s *Socket) raiseEvent(eventName string, data []interface{}) error {
+	s.Lock()
+	defer s.Unlock()
+
+	if handler, ok := s.events[eventName]; ok {
+		// Check if there are items in the data array
+		if len(data) > 1 {
+			data = data[1:]
+
+			args, err := convertUnmarshalledJSONToReflectValues(handler, data)
+
+			if err != nil {
+				return err
+			}
+
+			handler.Call(args)
+		} else {
+			handler.Call(nil)
+		}
+	}
+
+	return nil
+}
+
 func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan socket.Packet) {
 	for {
 		select {
@@ -88,29 +145,14 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 
 			// TODO: Check if a packet has an ID (requires ack)
 			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
-				s.Lock()
-
 				data := packet.Data.([]interface{})
 				eventName := data[0].(string)
 
-				if handler, ok := s.events[eventName]; ok {
-					// Check if there are items in the data array
-					if len(data) > 1 {
-						data = data[1:]
+				err := s.raiseEvent(eventName, data)
 
-						args, err := convertUnmarshalledJSONToReflectValues(handler, data)
-
-						if err != nil {
-							continue
-						}
-
-						handler.Call(args)
-					} else {
-						handler.Call(nil)
-					}
+				if err != nil {
+					continue
 				}
-
-				s.Unlock()
 			}
 		}
 	}
