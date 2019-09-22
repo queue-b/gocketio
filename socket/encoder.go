@@ -11,7 +11,8 @@ type BinaryPlaceholder struct {
 	Number      int  `json:"num"`
 }
 
-func hasBinary(data interface{}) bool {
+// HasBinary returns true if the data contains []byte or fixed-length byte arrays, false otherwise
+func HasBinary(data interface{}) bool {
 	if data == nil {
 		return false
 	}
@@ -71,7 +72,7 @@ func hasBinary(data interface{}) bool {
 				}
 
 				for _, v := range beforeEncoding {
-					if hasBinary(v) {
+					if HasBinary(v) {
 						return true
 					}
 				}
@@ -80,7 +81,7 @@ func hasBinary(data interface{}) bool {
 			}
 		case reflect.Struct:
 			for i := 0; i < rt.NumField(); i++ {
-				if hasBinary(rv.Field(i).Interface()) {
+				if HasBinary(rv.Field(i).Interface()) {
 					return true
 				}
 			}
