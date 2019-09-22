@@ -10,9 +10,20 @@ import (
 	"github.com/queue-b/gocket/socket"
 )
 
+type SocketState int
+
+const (
+	Disconnected SocketState = 1 << iota
+	Connecting
+	Connected
+	Reconnecting
+	Errored
+)
+
 type AckFunc func(id int, data interface{})
 
 var ErrNoHandler = errors.New("No handler registered")
+var ErrNotConnected = errors.New("Not connected")
 
 // Socket is a Socket.IO socket that can send messages to and
 // received messages from a namespace
@@ -24,6 +35,13 @@ type Socket struct {
 	incomingPackets chan socket.Packet
 	outgoingPackets chan socket.Packet
 	ackCounter      int
+	currentState    SocketState
+	id              string
+}
+
+// State returns the current state of the socket
+func (s *Socket) State() SocketState {
+	return s.currentState
 }
 
 // Namespace returns the namespace that this socket uses to send and receive
@@ -61,6 +79,13 @@ func (s *Socket) Send(data ...interface{}) error {
 
 // Emit raises an event on the server
 func (s *Socket) Emit(event string, data ...interface{}) error {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.currentState != Connected {
+		return ErrNotConnected
+	}
+
 	message := socket.Packet{}
 
 	// TODO: Check ...data for []byte elements and emit binary events
@@ -86,6 +111,10 @@ func (s *Socket) Emit(event string, data ...interface{}) error {
 func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{}) error {
 	s.Lock()
 	defer s.Unlock()
+
+	if s.currentState != Connected {
+		return ErrNotConnected
+	}
 
 	message := socket.Packet{}
 	message.Type = socket.Event
@@ -162,6 +191,23 @@ func (s *Socket) sendAck(id int, data []interface{}) {
 	s.outgoingPackets <- p
 }
 
+func (s *Socket) setStateFromPacketType(p socket.PacketType) {
+	s.Lock()
+	defer s.Unlock()
+
+	if p == socket.Disconnect {
+		s.currentState = Disconnected
+	}
+
+	if p == socket.Connect {
+		s.currentState = Connected
+	}
+
+	if p == socket.Error {
+		s.currentState = Errored
+	}
+}
+
 func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan socket.Packet) {
 	for {
 		select {
@@ -173,6 +219,8 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 				fmt.Println("Invalid read, killing socket receiveFromManager")
 				return
 			}
+
+			s.setStateFromPacketType(packet.Type)
 
 			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
 				data := packet.Data.([]interface{})
