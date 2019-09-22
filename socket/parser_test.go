@@ -12,7 +12,7 @@ func TestEncodeConnectWithID(t *testing.T) {
 
 	expected := `01["test"]`
 
-	encoded, err := p.Encode()
+	encoded, err := p.Encode(true)
 
 	if err != nil {
 		t.Errorf("Unable to encode %v", err)
@@ -31,7 +31,7 @@ func TestEncodeDisconnect(t *testing.T) {
 
 	expected := `1/woot,`
 
-	encoded, err := p.Encode()
+	encoded, err := p.Encode(true)
 
 	if err != nil {
 		t.Errorf("Unable to encode %v", err)
@@ -53,7 +53,7 @@ func TestEncodeEventWithNamespaceAndID(t *testing.T) {
 
 	expected := `2/test,1["a",1,{}]`
 
-	encoded, err := p.Encode()
+	encoded, err := p.Encode(true)
 
 	if err != nil {
 		t.Errorf("Unable to encode %v", err)
@@ -79,7 +79,7 @@ func TestEncodeSimpleBinary(t *testing.T) {
 		Data:      []interface{}{"a", []byte("abc")},
 	}
 
-	encoded, err := p.Encode()
+	encoded, err := p.Encode(true)
 
 	if err != nil {
 		t.Errorf("Unable to encode packet %v", err)
@@ -110,7 +110,7 @@ func TestEncodeBinaryFixedLengthByteArray(t *testing.T) {
 		Data:      []interface{}{"a", [1]byte{10}},
 	}
 
-	encoded, err := p.Encode()
+	encoded, err := p.Encode(true)
 
 	if err != nil {
 		t.Errorf("Unable to encode packet %v", err)
@@ -140,7 +140,7 @@ func TestEncodeBinaryByteArrayInStruct(t *testing.T) {
 		Data:      []interface{}{"a", struct{ Test []byte }{Test: []byte("asdf")}},
 	}
 
-	encoded, err := p.Encode()
+	encoded, err := p.Encode(true)
 
 	if err != nil {
 		t.Errorf("Unable to encode packet %v", err)
