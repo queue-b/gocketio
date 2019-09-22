@@ -122,8 +122,8 @@ func encodeAsBinary(p *Packet) ([][]byte, error) {
 }
 
 // Encode encodes a Packet into an array of []byte buffers
-func (p *Packet) Encode() ([][]byte, error) {
-	if p.Type == BinaryEvent || p.Type == BinaryAck {
+func (p *Packet) Encode(supportsBinary bool) ([][]byte, error) {
+	if supportsBinary && p.Type == BinaryEvent || p.Type == BinaryAck {
 		return encodeAsBinary(p)
 	}
 
