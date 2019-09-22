@@ -12,6 +12,8 @@ import (
 
 type AckFunc func(id int, data interface{})
 
+var ErrNoHandler = errors.New("No handler registered")
+
 // Socket is a Socket.IO socket that can send messages to and
 // received messages from a namespace
 type Socket struct {
@@ -108,35 +110,38 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 	return nil
 }
 
-func (s *Socket) raiseEvent(eventName string, data []interface{}) error {
+func (s *Socket) raiseEvent(eventName string, data []interface{}) ([]interface{}, error) {
 	s.Lock()
 	defer s.Unlock()
 
 	if handler, ok := s.events[eventName]; ok {
-		// Check if there are items in the data array
-		if len(data) > 1 {
-			data = data[1:]
+		var handlerResults []interface{}
 
-			args, err := convertUnmarshalledJSONToReflectValues(handler, data)
+		args, err := convertUnmarshalledJSONToReflectValues(handler, data)
 
-			if err != nil {
-				return err
-			}
-
-			handler.Call(args)
-		} else {
-			handler.Call(nil)
+		if err != nil {
+			return nil, err
 		}
+
+		vals := handler.Call(args)
+
+		if vals != nil {
+			for _, v := range vals {
+				handlerResults = append(handlerResults, v.Interface())
+			}
+		}
+
+		return handlerResults, nil
 	}
 
-	return nil
+	return nil, ErrNoHandler
 }
 
 func (s *Socket) raiseAck(id int, data interface{}) error {
 	var handler AckFunc
 	var ok bool
 	if handler, ok = s.acks[id]; !ok {
-		return errors.New("Missing ack handler")
+		return ErrNoHandler
 	}
 
 	handler(id, data)
@@ -146,11 +151,12 @@ func (s *Socket) raiseAck(id int, data interface{}) error {
 	return nil
 }
 
-func (s *Socket) sendAck(id int) {
+func (s *Socket) sendAck(id int, data []interface{}) {
 	p := socket.Packet{
 		Type:      socket.Ack,
 		ID:        &id,
 		Namespace: s.namespace,
+		Data:      data,
 	}
 
 	s.outgoingPackets <- p
@@ -172,14 +178,20 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 				data := packet.Data.([]interface{})
 				eventName := data[0].(string)
 
-				err := s.raiseEvent(eventName, data)
+				if len(data) > 1 {
+					data = data[1:]
+				} else {
+					data = make([]interface{}, 0)
+				}
+
+				results, err := s.raiseEvent(eventName, data)
 
 				if err != nil {
 					continue
 				}
 
 				if packet.ID != nil {
-					s.sendAck(*packet.ID)
+					s.sendAck(*packet.ID, results)
 				}
 			}
 
