@@ -21,6 +21,11 @@ func ContextDialer(ctx context.Context, address string) Dialer {
 	}
 }
 
+type Transport interface {
+	ID() string
+	SupportsBinary() bool
+}
+
 // Conn is a connection to an Engine.IO connection
 type Conn struct {
 	socket     *websocket.Conn

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"sync/atomic"
 
 	"github.com/queue-b/gocket/socket"
 )
@@ -28,19 +29,22 @@ var ErrNotConnected = errors.New("Not connected")
 // Socket is a Socket.IO socket that can send messages to and
 // received messages from a namespace
 type Socket struct {
-	sync.Mutex
-	events          map[string]reflect.Value
-	acks            map[int]AckFunc
+	sync.RWMutex
+	events          sync.Map
+	acks            sync.Map
 	namespace       string
 	incomingPackets chan socket.Packet
 	outgoingPackets chan socket.Packet
-	ackCounter      int
+	ackCounter      int32
 	currentState    SocketState
 	id              string
+	err             error
 }
 
 // State returns the current state of the socket
 func (s *Socket) State() SocketState {
+	s.RLock()
+	defer s.RUnlock()
 	return s.currentState
 }
 
@@ -63,18 +67,13 @@ func (s *Socket) On(event string, handler interface{}) error {
 		return err
 	}
 
-	s.Lock()
-	defer s.Unlock()
-
-	s.events[event] = reflect.ValueOf(handler)
+	s.events.Store(event, reflect.ValueOf(handler))
 	return nil
 }
 
 // Off removes the event handler for the event
 func (s *Socket) Off(event string) {
-	s.Lock()
-	defer s.Unlock()
-	delete(s.events, event)
+	s.events.Delete(event)
 }
 
 // Send raises a "message" event on the server
@@ -82,13 +81,26 @@ func (s *Socket) Send(data ...interface{}) error {
 	return s.Emit("message", data...)
 }
 
+func (s *Socket) checkState() error {
+	state := s.State()
+
+	if state == Errored {
+		return s.err
+	}
+
+	if state != Connected {
+		return ErrNotConnected
+	}
+
+	return nil
+}
+
 // Emit raises an event on the server
 func (s *Socket) Emit(event string, data ...interface{}) error {
-	s.Lock()
-	defer s.Unlock()
+	err := s.checkState()
 
-	if s.currentState != Connected {
-		return ErrNotConnected
+	if err != nil {
+		return err
 	}
 
 	message := socket.Packet{}
@@ -114,11 +126,10 @@ func (s *Socket) Emit(event string, data ...interface{}) error {
 // EmitWithAck raises an event on the server, and registers a callback that is invoked
 // when the server acknowledges receipt
 func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{}) error {
-	s.Lock()
-	defer s.Unlock()
+	err := s.checkState()
 
-	if s.currentState != Connected {
-		return ErrNotConnected
+	if err != nil {
+		return err
 	}
 
 	message := socket.Packet{}
@@ -133,11 +144,11 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 	}
 
 	message.Data = messageData
-	ackCount := s.ackCounter
+	ackCount := int(s.ackCounter)
 	message.ID = &ackCount
-	s.ackCounter++
+	atomic.AddInt32(&s.ackCounter, 1)
 
-	s.acks[ackCount] = ackFunc
+	s.acks.Store(ackCount, ackFunc)
 
 	s.outgoingPackets <- message
 
@@ -148,7 +159,8 @@ func (s *Socket) raiseEvent(eventName string, data []interface{}) ([]interface{}
 	s.Lock()
 	defer s.Unlock()
 
-	if handler, ok := s.events[eventName]; ok {
+	if handlerVal, ok := s.events.Load(eventName); ok {
+		handler := handlerVal.(reflect.Value)
 		var handlerResults []interface{}
 
 		args, err := convertUnmarshalledJSONToReflectValues(handler, data)
@@ -172,15 +184,16 @@ func (s *Socket) raiseEvent(eventName string, data []interface{}) ([]interface{}
 }
 
 func (s *Socket) raiseAck(id int, data interface{}) error {
-	var handler AckFunc
+	var handlerVal interface{}
 	var ok bool
-	if handler, ok = s.acks[id]; !ok {
+	if handlerVal, ok = s.acks.Load(id); !ok {
 		return ErrNoHandler
 	}
 
-	handler(id, data)
+	handler := handlerVal.(AckFunc)
 
-	delete(s.acks, id)
+	handler(id, data)
+	s.acks.Delete(id)
 
 	return nil
 }
@@ -200,6 +213,10 @@ func (s *Socket) setStateFromPacketType(p socket.PacketType) {
 	s.Lock()
 	defer s.Unlock()
 
+	if s.currentState == Errored {
+		return
+	}
+
 	if p == socket.Disconnect {
 		s.currentState = Disconnected
 	}
@@ -207,10 +224,14 @@ func (s *Socket) setStateFromPacketType(p socket.PacketType) {
 	if p == socket.Connect {
 		s.currentState = Connected
 	}
+}
 
-	if p == socket.Error {
-		s.currentState = Errored
-	}
+func (s *Socket) setError(err error) {
+	s.Lock()
+	defer s.Unlock()
+
+	s.currentState = Errored
+	s.err = err
 }
 
 func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan socket.Packet) {

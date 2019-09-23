@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
-	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/cenkalti/backoff"
@@ -14,12 +14,19 @@ import (
 	"github.com/queue-b/gocket/socket"
 )
 
+type mockConn struct{}
+
+func (m *mockConn) ID() string           { return "hello" }
+func (m *mockConn) SupportsBinary() bool { return true }
+
 func TestSendToEngine(t *testing.T) {
 	s := &Socket{}
-	s.events = make(map[string]reflect.Value)
+	s.events = sync.Map{}
 	s.outgoingPackets = make(chan socket.Packet)
+	s.currentState = Connected
 
 	m := &Manager{}
+	m.conn = &mockConn{}
 	m.sockets = make(map[string]*Socket)
 
 	enginePackets := make(chan engine.Packet)
@@ -42,10 +49,12 @@ func TestSendToEngine(t *testing.T) {
 
 func TestReceiveFromEngine(t *testing.T) {
 	s := &Socket{}
-	s.events = make(map[string]reflect.Value)
+	s.events = sync.Map{}
 	s.incomingPackets = make(chan socket.Packet)
+	s.currentState = Connected
 
 	m := &Manager{}
+	m.conn = &mockConn{}
 	m.sockets = make(map[string]*Socket)
 	m.sockets["/"] = s
 
@@ -62,7 +71,7 @@ func TestReceiveFromEngine(t *testing.T) {
 	p.Namespace = "/"
 	p.Data = []interface{}{"fancy", "pants"}
 
-	encoded, err := p.Encode()
+	encoded, err := p.Encode(true)
 
 	if err != nil {
 		t.Errorf("Error encoding data %v\n", err)
@@ -97,6 +106,7 @@ func TestHandleDisconnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	manager := &Manager{}
+	manager.conn = &mockConn{}
 	manager.cancel = cancel
 	manager.socketCtx = ctx
 	manager.opts = DefaultManagerConfig()
@@ -123,6 +133,7 @@ func TestHandleDisconnectReconnectError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	manager := &Manager{}
+	manager.conn = &mockConn{}
 	manager.cancel = cancel
 	manager.socketCtx = ctx
 	manager.opts = DefaultManagerConfig()
@@ -143,9 +154,11 @@ func TestManagerNamespaceWithExistingSocket(t *testing.T) {
 		sockets:   make(map[string]*Socket),
 		cancel:    cancel,
 		socketCtx: ctx,
+		conn:      &mockConn{},
 	}
 
 	s := &Socket{}
+	s.currentState = Connected
 	m.sockets["/"] = s
 
 	ns, err := m.Namespace("/")
@@ -165,6 +178,7 @@ func TestManagerNamespaceWithNewSocket(t *testing.T) {
 	fromSockets := make(chan socket.Packet, 1)
 
 	m := &Manager{
+		conn:        &mockConn{},
 		sockets:     make(map[string]*Socket),
 		cancel:      cancel,
 		socketCtx:   ctx,
@@ -198,6 +212,7 @@ func TestConnectContext(t *testing.T) {
 	}
 
 	m := &Manager{
+		conn:      &mockConn{},
 		address:   addr,
 		socketCtx: ctx,
 		sockets:   make(map[string]*Socket),

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -37,7 +36,7 @@ type Manager struct {
 	sync.Mutex
 	address     *url.URL
 	sockets     map[string]*Socket
-	conn        *engine.Conn
+	conn        engine.Transport
 	fromSockets chan socket.Packet
 	socketCtx   context.Context
 	cancel      context.CancelFunc
@@ -84,20 +83,35 @@ func receiveFromEngine(ctx context.Context, manager *Manager, inputPackets chan 
 
 			fmt.Printf("Received packet %v\n", message)
 
-			ns := message.Namespace
-
-			if ns == "" {
-				ns = "/"
-			}
-
-			if socket, ok := manager.sockets[ns]; ok {
-				select {
-				case <-ctx.Done():
-					return
-				case socket.incomingPackets <- message:
-				}
-			}
+			go manager.forwardMessage(ctx, message)
 		}
+	}
+}
+
+func (m *Manager) forwardMessage(ctx context.Context, message socket.Packet) {
+	ns := message.Namespace
+
+	if ns == "" {
+		ns = "/"
+	}
+
+	m.Lock()
+	if s, ok := m.sockets[ns]; ok {
+		m.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return
+		case s.incomingPackets <- message:
+		}
+
+		if message.Type == socket.Error {
+			m.Lock()
+			delete(m.sockets, ns)
+			close(s.incomingPackets)
+		}
+	} else {
+		m.Unlock()
 	}
 }
 
@@ -172,8 +186,8 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	nsSocket.namespace = namespace
 	nsSocket.incomingPackets = make(chan socket.Packet)
 
-	nsSocket.events = make(map[string]reflect.Value)
-	nsSocket.acks = make(map[int]AckFunc)
+	nsSocket.events = sync.Map{}
+	nsSocket.acks = sync.Map{}
 	nsSocket.id = fmt.Sprintf("%v#%v", namespace, m.conn.ID())
 
 	go receiveFromManager(m.socketCtx, nsSocket, nsSocket.incomingPackets)

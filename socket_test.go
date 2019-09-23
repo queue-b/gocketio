@@ -2,7 +2,7 @@ package gocket
 
 import (
 	"context"
-	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/queue-b/gocket/socket"
@@ -18,21 +18,22 @@ func TestSocketNamespace(t *testing.T) {
 
 func TestSocketOnWithFunctionHandler(t *testing.T) {
 	s := Socket{}
-	s.events = make(map[string]reflect.Value)
+	s.events = sync.Map{}
 	err := s.On("fancy", func(s string) {})
 
 	if err != nil {
 		t.Errorf("Unable to add event handler %v", err)
 	}
 
-	if _, ok := s.events["fancy"]; !ok {
+	if _, ok := s.events.Load("fancy"); !ok {
 		t.Error("On() did not add handler to handlers map")
 	}
 }
 
 func TestSocketOnWithNonFunctionHandler(t *testing.T) {
 	s := Socket{}
-	s.events = make(map[string]reflect.Value)
+	s.events = sync.Map{}
+	s.currentState = Connected
 
 	err := s.On("fancy", 5)
 
@@ -40,14 +41,15 @@ func TestSocketOnWithNonFunctionHandler(t *testing.T) {
 		t.Error("Adding non-function handler should not have succeeded")
 	}
 
-	if _, ok := s.events["fancy"]; ok {
+	if _, ok := s.events.Load("fancy"); ok {
 		t.Error("On() should not add non-func handler to handlers map")
 	}
 }
 
 func TestSocketOff(t *testing.T) {
 	s := Socket{}
-	s.events = make(map[string]reflect.Value)
+	s.events = sync.Map{}
+	s.currentState = Connected
 
 	err := s.On("fancy", func() {})
 
@@ -57,14 +59,15 @@ func TestSocketOff(t *testing.T) {
 
 	s.Off("fancy")
 
-	if _, ok := s.events["fancy"]; ok {
+	if _, ok := s.events.Load("fancy"); ok {
 		t.Error("Expected off to remove event handler")
 	}
 }
 
 func TestReceiveFromManager(t *testing.T) {
 	s := Socket{}
-	s.events = make(map[string]reflect.Value)
+	s.events = sync.Map{}
+	s.currentState = Connected
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -96,6 +99,7 @@ func TestReceiveFromManager(t *testing.T) {
 func TestSocketEmit(t *testing.T) {
 	s := Socket{}
 	s.outgoingPackets = make(chan socket.Packet, 1)
+	s.currentState = Connected
 
 	s.Emit("fancy", "pants")
 
@@ -143,6 +147,7 @@ func TestSocketEmit(t *testing.T) {
 func TestSocketSend(t *testing.T) {
 	s := Socket{}
 	s.outgoingPackets = make(chan socket.Packet, 1)
+	s.currentState = Connected
 
 	s.Send("pants")
 
