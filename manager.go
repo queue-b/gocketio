@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v3"
 
-	"github.com/queue-b/gocket/socket"
+	"github.com/queue-b/gocketio/socket"
 
-	"github.com/queue-b/gocket/engine"
+	"github.com/queue-b/gocketio/engine"
 )
 
 // ManagerConfig contains configuration information for a Manager

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/queue-b/gocket/socket"
+	"github.com/queue-b/gocketio/socket"
 )
 
 type SocketState int
