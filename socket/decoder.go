@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/queue-b/gocket/engine"
+	"github.com/queue-b/gocketio/engine"
 )
 
 // ErrWaitingForMorePackets is returned when the Decoder has not yet received enough

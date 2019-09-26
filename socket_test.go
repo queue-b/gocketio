@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/queue-b/gocket/socket"
+	"github.com/queue-b/gocketio/socket"
 )
 
 func TestSocketNamespace(t *testing.T) {
