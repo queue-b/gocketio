@@ -203,18 +203,36 @@ type openData struct {
 	PingTimeout  int
 }
 
-// DialContext creates a Conn to the Engine.IO server located at address
-func DialContext(ctx context.Context, address string) (*Conn, error) {
+func fixupAddress(address string) (*url.URL, error) {
 	parsedAddress, err := url.Parse(address)
 
 	if err != nil {
 		return nil, err
 	}
 
+	if parsedAddress.Scheme == "http" {
+		parsedAddress.Scheme = "ws"
+	}
+
+	if parsedAddress.Scheme == "https" {
+		parsedAddress.Scheme = "wss"
+	}
+
 	if parsedAddress.Path == "/" || parsedAddress.Path == "" {
 		newPath := strings.TrimRight(parsedAddress.Path, "/")
 		newPath += "/engine.io/"
 		parsedAddress.Path = newPath
+	}
+
+	return parsedAddress, nil
+}
+
+// DialContext creates a Conn to the Engine.IO server located at address
+func DialContext(ctx context.Context, address string) (*Conn, error) {
+	parsedAddress, err := fixupAddress(address)
+
+	if err != nil {
+		return nil, err
 	}
 
 	eio := fmt.Sprintf("%v", ParserProtocol)
