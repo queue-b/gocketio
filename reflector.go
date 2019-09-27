@@ -1,4 +1,4 @@
-package gocket
+package gocketio
 
 import (
 	"errors"
