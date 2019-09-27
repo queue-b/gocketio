@@ -32,6 +32,7 @@ func DefaultManagerConfig() *ManagerConfig {
 	}
 }
 
+// Manager manages connections to the same server with different namespaces
 type Manager struct {
 	sync.Mutex
 	address     *url.URL
