@@ -261,6 +261,7 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 				results, err := s.raiseEvent(eventName, data)
 
 				if err != nil {
+					fmt.Println("Error raising event", err)
 					continue
 				}
 
