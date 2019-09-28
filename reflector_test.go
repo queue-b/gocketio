@@ -32,6 +32,37 @@ func TestIsFunction(t *testing.T) {
 	}
 }
 
+// func TestConvertUnmarshalledJSONToReflectValuesWithTypeAlias(t *testing.T) {
+// 	fn := func(a webrtc.SessionDescription) {}
+
+// 	fnVal := reflect.ValueOf(fn)
+
+// 	session := webrtc.SessionDescription{
+// 		Type: webrtc.SDPTypeOffer,
+// 		SDP:  "sdp",
+// 	}
+
+// 	sessionBytes, err := json.Marshal(session)
+
+// 	if err != nil {
+// 		t.Fatalf("Unable to marshal %v\n", err)
+// 	}
+
+// 	fmt.Println(string(sessionBytes))
+
+// 	var test interface{}
+
+// 	json.Unmarshal(sessionBytes, &test)
+
+// 	fmt.Println(test)
+
+// 	_, err = convertUnmarshalledJSONToReflectValues(fnVal, []interface{}{test})
+
+// 	if err != nil {
+// 		t.Fatalf("Unable to unmarshal %v\n", err)
+// 	}
+// }
+
 func TestConvertUnmarshalledJSONToReflectValues(t *testing.T) {
 	fn := func(a string) {}
 	fnVal := reflect.ValueOf(fn)

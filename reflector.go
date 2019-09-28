@@ -2,6 +2,7 @@ package gocketio
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/mitchellh/mapstructure"
@@ -55,6 +56,33 @@ func convertUnmarshalledJSONToReflectValues(callable reflect.Value, data interfa
 				config := &mapstructure.DecoderConfig{
 					TagName: "json",
 					Result:  val,
+					DecodeHook: func(sourceType, destType reflect.Type, rawVal interface{}) (interface{}, error) {
+						// Normally the JSON decoder would be decoding to a specific type, and would have called
+						// UnmarshalJSON as appropriate; however, this library decodes to an interface which doesn't
+						// know anything about the contained types. This DecodeHook allows UnmarshalJSON to be called
+						// as appropriate on types that support it
+						switch s := rawVal.(type) {
+						case string:
+							dstVal := reflect.New(destType)
+
+							m, ok := dstVal.Type().MethodByName("UnmarshalJSON")
+
+							if ok {
+								quotedVal := fmt.Sprintf(`"%v"`, s)
+
+								ret := m.Func.Call([]reflect.Value{dstVal, reflect.ValueOf([]byte(quotedVal))})
+
+								// UnmarshalJSON returns an error
+								if ret[0].IsNil() {
+									return dstVal.Elem().Interface(), nil
+								}
+
+								return nil, ret[0].Elem().Interface().(error)
+							}
+						}
+
+						return rawVal, nil
+					},
 				}
 
 				decoder, err := mapstructure.NewDecoder(config)
