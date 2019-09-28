@@ -52,7 +52,18 @@ func convertUnmarshalledJSONToReflectValues(callable reflect.Value, data interfa
 				// This is a pointer to a "zero" value for the type
 				val := reflect.New(inType).Interface()
 
-				err := mapstructure.Decode(dataSlice[i], val)
+				config := &mapstructure.DecoderConfig{
+					TagName: "json",
+					Result:  val,
+				}
+
+				decoder, err := mapstructure.NewDecoder(config)
+
+				if err != nil {
+					return nil, err
+				}
+
+				err = decoder.Decode(dataSlice[i])
 
 				// If decoding fails, return an error
 				if err != nil {
