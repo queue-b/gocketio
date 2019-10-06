@@ -236,7 +236,7 @@ func connectContext(ctx context.Context, m *Manager, dialer engine.Dialer) error
 
 func reconnect(ctx context.Context, m *Manager) func() error {
 	return func() error {
-		return connectContext(ctx, m, engine.ContextDialer(ctx, m.address.String()))
+		return connectContext(ctx, m, engine.ContextDialer(ctx, m.address.String(), m.opts.ConnectionTimeout))
 	}
 }
 
@@ -277,5 +277,5 @@ func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Mana
 
 	err = backoff.Retry(reconnect(ctx, manager), backoff.WithContext(cfg.BackOff, ctx))
 
-	return manager, nil
+	return manager, err
 }

@@ -15,9 +15,9 @@ import (
 
 type Dialer func(address string) (*Conn, error)
 
-func ContextDialer(ctx context.Context, address string) Dialer {
+func ContextDialer(ctx context.Context, address string, timeout time.Duration) Dialer {
 	return func(address string) (*Conn, error) {
-		return DialContext(ctx, address)
+		return DialContext(ctx, address, timeout)
 	}
 }
 
@@ -228,7 +228,7 @@ func fixupAddress(address string) (*url.URL, error) {
 }
 
 // DialContext creates a Conn to the Engine.IO server located at address
-func DialContext(ctx context.Context, address string) (*Conn, error) {
+func DialContext(ctx context.Context, address string, timeout time.Duration) (*Conn, error) {
 	parsedAddress, err := fixupAddress(address)
 
 	if err != nil {
@@ -246,12 +246,13 @@ func DialContext(ctx context.Context, address string) (*Conn, error) {
 
 	dialer := websocket.DefaultDialer
 	dialer.NetDial = func(network, address string) (net.Conn, error) {
-		return net.DialTimeout(network, address, 200*time.Millisecond)
+		return net.DialTimeout(network, address, timeout)
 	}
 
-	socket, _, err := websocket.DefaultDialer.DialContext(ctx, parsedAddress.String(), nil)
+	socket, _, err := dialer.DialContext(ctx, parsedAddress.String(), nil)
 
 	if err != nil {
+		fmt.Println(err)
 		return nil, err
 	}
 
