@@ -156,9 +156,6 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 }
 
 func (s *Socket) raiseEvent(eventName string, data []interface{}) ([]interface{}, error) {
-	s.Lock()
-	defer s.Unlock()
-
 	if handlerVal, ok := s.events.Load(eventName); ok {
 		handler := handlerVal.(reflect.Value)
 		var handlerResults []interface{}
@@ -245,8 +242,6 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 				fmt.Println("Invalid read, killing socket receiveFromManager")
 				return
 			}
-
-			s.setStateFromPacketType(packet.Type)
 
 			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
 				data := packet.Data.([]interface{})
