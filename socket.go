@@ -243,6 +243,8 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 				return
 			}
 
+			fmt.Println("ReceiveFromManager")
+
 			s.setStateFromPacketType(packet.Type)
 
 			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
