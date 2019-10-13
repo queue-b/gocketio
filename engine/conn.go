@@ -115,6 +115,7 @@ func (conn *Conn) receiveFromTransport(ctx context.Context) error {
 			go conn.startEnginePing(ctx, time.Duration(data.PingInterval)*time.Millisecond)
 		}
 	case Message:
+		fmt.Printf("[transport] Received message %v\n", packet)
 		conn.Receive <- packet
 	case Ping:
 		fmt.Println("Received Ping")
