@@ -54,8 +54,10 @@ func handleDisconnect(manager *Manager, reconnectFunction func() error, disconne
 
 			if err != nil {
 				fmt.Println(err)
+				return
 			}
 
+			manager.onReconnect()
 			return
 		}
 	}
@@ -204,6 +206,21 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	m.sockets[namespace] = nsSocket
 
 	return nsSocket, nil
+}
+
+func (m *Manager) onReconnect() {
+	m.Lock()
+	defer m.Unlock()
+
+	for namespace := range m.sockets {
+		if !socket.IsRootNamespace(namespace) {
+			connectPacket := socket.Packet{}
+			connectPacket.Namespace = namespace
+			connectPacket.Type = socket.Connect
+
+			m.fromSockets <- connectPacket
+		}
+	}
 }
 
 func connectContext(ctx context.Context, m *Manager, dialer engine.Dialer) error {
