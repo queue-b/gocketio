@@ -155,7 +155,7 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 	return nil
 }
 
-func (s *Socket) raiseEvent(eventName string, data []interface{}) ([]interface{}, error) {
+func (s *Socket) raiseEvent(eventName string, data []interface{}) (interface{}, error) {
 	if handlerVal, ok := s.events.Load(eventName); ok {
 		handler := handlerVal.(reflect.Value)
 		var handlerResults []interface{}
@@ -172,6 +172,13 @@ func (s *Socket) raiseEvent(eventName string, data []interface{}) ([]interface{}
 			for _, v := range vals {
 				handlerResults = append(handlerResults, v.Interface())
 			}
+		}
+
+		// Special case for no result; if the empty handlerResults array is returned
+		// it looks weird to the type system.
+		// Also just setting it to nil and returning it doesn't work
+		if len(handlerResults) == 0 {
+			return nil, nil
 		}
 
 		return handlerResults, nil
@@ -195,8 +202,7 @@ func (s *Socket) raiseAck(id int, data interface{}) error {
 	return nil
 }
 
-func (s *Socket) sendAck(id int, data []interface{}) {
-	fmt.Println("Sending ack")
+func (s *Socket) sendAck(id int, data interface{}) {
 	p := socket.Packet{
 		Type:      socket.Ack,
 		ID:        &id,
@@ -205,8 +211,6 @@ func (s *Socket) sendAck(id int, data []interface{}) {
 	}
 
 	s.outgoingPackets <- p
-	fmt.Println("Sent ack")
-
 }
 
 func (s *Socket) setStateFromPacketType(p socket.PacketType) {
@@ -245,8 +249,6 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 				fmt.Println("Invalid read, killing socket receiveFromManager")
 				return
 			}
-
-			fmt.Println("ReceiveFromManager")
 
 			s.setStateFromPacketType(packet.Type)
 
