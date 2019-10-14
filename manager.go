@@ -135,6 +135,7 @@ func sendToEngine(ctx context.Context, manager *Manager, outputPackets chan sock
 			encodedData, err := packet.Encode(manager.conn.SupportsBinary())
 
 			if err != nil || len(encodedData) == 0 {
+				fmt.Printf("Error encoding packet %v\n", err)
 				continue
 			}
 
