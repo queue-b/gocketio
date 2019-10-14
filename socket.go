@@ -196,6 +196,7 @@ func (s *Socket) raiseAck(id int, data interface{}) error {
 }
 
 func (s *Socket) sendAck(id int, data []interface{}) {
+	fmt.Println("Sending ack")
 	p := socket.Packet{
 		Type:      socket.Ack,
 		ID:        &id,
@@ -204,6 +205,8 @@ func (s *Socket) sendAck(id int, data []interface{}) {
 	}
 
 	s.outgoingPackets <- p
+	fmt.Println("Sent ack")
+
 }
 
 func (s *Socket) setStateFromPacketType(p socket.PacketType) {
