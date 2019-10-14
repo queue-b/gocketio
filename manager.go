@@ -143,6 +143,8 @@ func sendToEngine(ctx context.Context, manager *Manager, outputPackets chan sock
 			// even if the packet has binary
 			first := string(encodedData[0])
 
+			fmt.Printf("Sending %v to engine\n", first)
+
 			p := engine.StringPacket{}
 			p.Type = engine.Message
 			p.Data = &first
