@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -28,6 +29,7 @@ type Transport interface {
 
 // Conn is a connection to an Engine.IO connection
 type Conn struct {
+	sync.RWMutex
 	socket     *websocket.Conn
 	id         string
 	disconnect chan struct{}
@@ -39,6 +41,8 @@ type Conn struct {
 
 // ID returns the remote ID assigned to this connection
 func (conn *Conn) ID() string {
+	conn.RLock()
+	defer conn.RUnlock()
 	return conn.id
 }
 
@@ -67,6 +71,12 @@ func (conn *Conn) startEnginePing(ctx context.Context, pingInterval time.Duratio
 			conn.Send <- p
 		}
 	}
+}
+
+func (conn *Conn) setID(id string) {
+	conn.Lock()
+	defer conn.Unlock()
+	conn.id = id
 }
 
 func (conn *Conn) receiveFromTransport(ctx context.Context) error {
@@ -111,7 +121,7 @@ func (conn *Conn) receiveFromTransport(ctx context.Context) error {
 				return err
 			}
 
-			conn.id = data.SID
+			conn.setID(data.SID)
 			go conn.startEnginePing(ctx, time.Duration(data.PingInterval)*time.Millisecond)
 		}
 	case Message:
@@ -138,6 +148,7 @@ func (conn *Conn) receiveMessages(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
+			fmt.Println("ReceiveFromTransport")
 			err := conn.receiveFromTransport(ctx)
 
 			if err != nil {
