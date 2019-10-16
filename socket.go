@@ -25,10 +25,15 @@ const (
 // Javascript Number.MAX_SAFE_INTEGER
 var maxSafeInteger = int64(math.Pow(2, 53) - 1)
 
+// AckFunc is a func that can be called in response to receiving an ACK packet
 type AckFunc func(id int64, data interface{})
 
 var errNoHandler = errors.New("No handler registered")
+
+// ErrNotConnected is returned when an attempt is made to Emit an event from a Socket that is not in the Connected state
 var ErrNotConnected = errors.New("Not connected")
+
+// ErrBlacklistedEvent is returned when an attempt is made to Emit a reserved event from a Socket
 var ErrBlacklistedEvent = errors.New("Blacklisted event")
 
 // Socket is a Socket.IO socket that can send messages to and
