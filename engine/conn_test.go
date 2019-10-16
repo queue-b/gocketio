@@ -11,6 +11,17 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func TestID(t *testing.T) {
+	c := Conn{}
+
+	id := "asdfjkl"
+	c.setID(id)
+
+	if c.ID() != id {
+		t.Fatalf("Expected ID %v, got %v", id, c.ID())
+	}
+}
+
 func TestFixupAddress(t *testing.T) {
 	address := "http://localhost:3030"
 
