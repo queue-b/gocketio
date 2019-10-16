@@ -317,29 +317,41 @@ func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan soc
 			s.setStateFromPacketType(packet.Type)
 
 			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
-				data := packet.Data.([]interface{})
-				eventName := data[0].(string)
+				// Protect against a malformed packet
+				if packet.Data != nil {
+					switch data := packet.Data.(type) {
+					case []interface{}:
+						if len(data) == 0 {
+							continue
+						}
 
-				if len(data) > 1 {
-					data = data[1:]
-				} else {
-					data = make([]interface{}, 0)
-				}
+						switch eventName := data[0].(type) {
+						case string:
+							if len(data) > 1 {
+								data = data[1:]
+							} else {
+								data = make([]interface{}, 0)
+							}
 
-				results, err := s.raiseEvent(eventName, data)
+							results, err := s.raiseEvent(eventName, data)
 
-				if err != nil {
-					fmt.Println("Error raising event", err)
-					continue
-				}
+							if err != nil {
+								fmt.Println("Error raising event", err)
+								continue
+							}
 
-				if packet.ID != nil {
-					s.sendAck(*packet.ID, results)
+							if packet.ID != nil {
+								s.sendAck(*packet.ID, results)
+							}
+						}
+					}
 				}
 			}
 
 			if packet.Type == socket.Ack || packet.Type == socket.BinaryAck {
-				s.raiseAck(*packet.ID, packet.Data)
+				if packet.ID != nil {
+					s.raiseAck(*packet.ID, packet.Data)
+				}
 			}
 		}
 	}

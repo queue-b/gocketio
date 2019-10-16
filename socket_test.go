@@ -2,8 +2,10 @@ package gocketio
 
 import (
 	"context"
+	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/queue-b/gocketio/socket"
 )
@@ -104,6 +106,111 @@ func TestReceiveFromManager(t *testing.T) {
 	}
 }
 
+func TestReceiveEventWithNoDataManager(t *testing.T) {
+	s := Socket{}
+	s.events = sync.Map{}
+	s.currentState = Connected
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	packets := make(chan socket.Packet)
+
+	go receiveFromManager(ctx, &s, packets)
+
+	results := make(chan struct{}, 1)
+
+	s.On("fancy", func() {
+		results <- struct{}{}
+	})
+
+	p := socket.Packet{
+		Type: socket.Event,
+		Data: []interface{}{"fancy"},
+	}
+
+	packets <- p
+
+	timer := time.NewTimer(500 * time.Millisecond)
+
+	select {
+	case <-timer.C:
+		t.Fatal("Handler was not invoked")
+	case <-results:
+	}
+}
+
+func TestSocketReceiveEventWithNoHandler(t *testing.T) {
+	s := Socket{}
+	s.events = sync.Map{}
+	s.currentState = Connected
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	packets := make(chan socket.Packet)
+
+	go receiveFromManager(ctx, &s, packets)
+
+	results := make(chan string, 1)
+
+	s.On("fancy", func(s string) {
+		results <- s
+	})
+
+	p := socket.Packet{
+		Type: socket.Event,
+		Data: []interface{}{"plain", "pants"},
+	}
+
+	packets <- p
+
+	timer := time.NewTimer(500 * time.Millisecond)
+
+	select {
+	case <-results:
+		t.Fatal("Event should not have been raised")
+	case <-timer.C:
+	}
+}
+
+func TestSocketReceiveAckWithNoHandler(t *testing.T) {
+	s := Socket{}
+	s.acks = sync.Map{}
+	s.currentState = Connected
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	packets := make(chan socket.Packet)
+
+	go receiveFromManager(ctx, &s, packets)
+
+	results := make(chan int64, 1)
+
+	s.acks.Store(10, reflect.ValueOf(func(id int64, data interface{}) {
+		results <- id
+	}))
+
+	ackID := int64(7)
+
+	p := socket.Packet{
+		Type: socket.Ack,
+		ID:   &ackID,
+		Data: []interface{}{"acky", "tack"},
+	}
+
+	packets <- p
+
+	timer := time.NewTimer(500 * time.Millisecond)
+
+	select {
+	case <-results:
+		t.Fatal("Event should not have been raised")
+	case <-timer.C:
+	}
+}
+
 func TestSocketEmitWithAck(t *testing.T) {
 	s := Socket{}
 	s.outgoingPackets = make(chan socket.Packet, 1)
@@ -152,6 +259,42 @@ func TestSocketEmitWithAck(t *testing.T) {
 		default:
 			t.Errorf("Expected second data element to be string, got %T", second)
 		}
+	}
+}
+
+func TestSocketReceiveAckForEvent(t *testing.T) {
+	s := Socket{}
+	s.outgoingPackets = make(chan socket.Packet, 1)
+	s.incomingPackets = make(chan socket.Packet, 1)
+	s.currentState = Connected
+	s.events = sync.Map{}
+	s.acks = sync.Map{}
+
+	ackIds := make(chan int64, 1)
+
+	s.EmitWithAck("fancier", func(id int64, data interface{}) { ackIds <- id })
+
+	expectedID := int64(0)
+
+	ackPacket := socket.Packet{
+		Type:      socket.Ack,
+		ID:        &expectedID,
+		Namespace: "/",
+		Data:      nil,
+	}
+
+	s.incomingPackets <- ackPacket
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	defer cancel()
+
+	go receiveFromManager(ctx, &s, s.incomingPackets)
+
+	firstAckID := <-ackIds
+
+	if firstAckID != expectedID {
+		t.Fatalf("Expected Ack ID %v, got %v\n", expectedID, firstAckID)
 	}
 }
 
