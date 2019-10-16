@@ -220,7 +220,7 @@ func (s *Socket) raiseEvent(eventName string, data []interface{}) (interface{}, 
 	var handlerVal interface{}
 	var ok bool
 
-	if handlerVal, ok = s.events.Load(eventName); ok {
+	if handlerVal, ok = s.events.Load(eventName); !ok {
 		return nil, errNoHandler
 	}
 
