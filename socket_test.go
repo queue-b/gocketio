@@ -191,4 +191,43 @@ func TestSocketSend(t *testing.T) {
 	}
 }
 
+func TestEventBlacklist(t *testing.T) {
+	blacklistedEvents := []string{
+		"connect",
+		"connect_error",
+		"connect_timeout",
+		"connecting",
+		"disconnect",
+		"error",
+		"reconnect",
+		"reconnect_attempt",
+		"reconnect_failed",
+		"reconnect_error",
+		"reconnecting",
+		"ping",
+		"pong",
+	}
+
+	for _, e := range blacklistedEvents {
+		if !isBlacklisted(e) {
+			t.Fatalf("%v should be blacklisted\n", e)
+		}
+	}
+
+	s := &Socket{}
+
+	err := s.Emit("connect", "hello")
+
+	if err != ErrBlacklistedEvent {
+		t.Fatal("Emit should not emit a blacklisted event")
+	}
+
+	err = s.EmitWithAck("connect", func(id int, data interface{}) {}, "hello")
+
+	if err != ErrBlacklistedEvent {
+		t.Fatal("EmitWithAck should not emit a blacklisted event")
+	}
+
+}
+
 // TODO: Additional tests for acking functions
