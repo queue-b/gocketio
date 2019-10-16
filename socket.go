@@ -212,34 +212,38 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 }
 
 func (s *Socket) raiseEvent(eventName string, data []interface{}) (interface{}, error) {
-	if handlerVal, ok := s.events.Load(eventName); ok {
-		handler := handlerVal.(reflect.Value)
-		var handlerResults []interface{}
+	var handlerVal interface{}
+	var ok bool
 
-		args, err := convertUnmarshalledJSONToReflectValues(handler, data)
+	if handlerVal, ok = s.events.Load(eventName); ok {
+		return nil, errNoHandler
+	}
 
-		if err != nil {
-			return nil, err
-		}
+	handler := handlerVal.(reflect.Value)
+	var handlerResults []interface{}
 
-		vals := handler.Call(args)
+	args, err := convertUnmarshalledJSONToReflectValues(handler, data)
 
-		if vals != nil {
-			for _, v := range vals {
-				handlerResults = append(handlerResults, v.Interface())
-			}
-		}
+	if err != nil {
+		return nil, err
+	}
 
-		// Special case for no result; if the empty handlerResults array is returned
-		// it looks weird to the type system.
-		// Also just setting it to nil and returning it doesn't work
-		if len(handlerResults) == 0 {
-			return nil, nil
+	vals := handler.Call(args)
+
+	if vals != nil {
+		for _, v := range vals {
+			handlerResults = append(handlerResults, v.Interface())
 		}
 	}
 
-	return nil, errNoHandler
+	// Special case for no result; if the empty handlerResults array is returned
+	// it looks weird to the type system.
+	// Also just setting it to nil and returning it doesn't work
+	if len(handlerResults) == 0 {
+		return nil, nil
+	}
 
+	return handlerResults, nil
 }
 
 func (s *Socket) raiseAck(id int64, data interface{}) error {
