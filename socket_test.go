@@ -16,6 +16,14 @@ func TestSocketNamespace(t *testing.T) {
 	}
 }
 
+func TestSocketID(t *testing.T) {
+	s := Socket{id: "ididid"}
+
+	if s.ID() != "ididid" {
+		t.Fatalf("ID invalid. Expected 'ididid', got %v\n", s.ID())
+	}
+}
+
 func TestSocketOnWithFunctionHandler(t *testing.T) {
 	s := Socket{}
 	s.events = sync.Map{}
@@ -96,6 +104,95 @@ func TestReceiveFromManager(t *testing.T) {
 	}
 }
 
+func TestSocketEmitWithAck(t *testing.T) {
+	s := Socket{}
+	s.outgoingPackets = make(chan socket.Packet, 1)
+	s.currentState = Connected
+
+	err := s.EmitWithAck("fancy", func(id int64, data interface{}) {}, "pants")
+
+	if err != nil {
+		t.Fatalf("Unexpected error - EmitWithAck: %v\n", err)
+	}
+
+	p := <-s.outgoingPackets
+
+	if p.Type != socket.Event {
+		t.Errorf("Expected Event, got %v", p.Type)
+	}
+
+	if p.Namespace != "" {
+		t.Errorf("Expected no namespace, got %v", p.Namespace)
+	}
+
+	if *p.ID != 0 {
+		t.Errorf("Expected 0, got %v", *p.ID)
+	}
+
+	switch data := p.Data.(type) {
+	case []interface{}:
+		if len(data) != 2 {
+			t.Errorf("Expected .Data length 2, got %v", len(data))
+		}
+
+		switch first := data[0].(type) {
+		case string:
+			if first != "fancy" {
+				t.Errorf("Expected data[0] to be 'fancy', got %v", data[0])
+			}
+		default:
+			t.Errorf("Expected first data element to be string, got %T", first)
+		}
+
+		switch second := data[1].(type) {
+		case string:
+			if second != "pants" {
+				t.Errorf("Expected data[1] to be 'pants', got %v", data[1])
+			}
+		default:
+			t.Errorf("Expected second data element to be string, got %T", second)
+		}
+	}
+}
+
+func TestSocketSendAckForEvent(t *testing.T) {
+	s := Socket{}
+	s.outgoingPackets = make(chan socket.Packet, 1)
+	s.incomingPackets = make(chan socket.Packet, 1)
+	s.currentState = Connected
+	s.events = sync.Map{}
+	s.acks = sync.Map{}
+
+	s.On("fancyAckable", func() {})
+
+	id := int64(15)
+
+	packetForAck := socket.Packet{
+		Type:      socket.Event,
+		ID:        &id,
+		Namespace: "/",
+		Data:      []interface{}{"fancyAckable", "pantses"},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	defer cancel()
+
+	go receiveFromManager(ctx, &s, s.incomingPackets)
+
+	s.incomingPackets <- packetForAck
+
+	ackPacket := <-s.outgoingPackets
+
+	if ackPacket.Type != socket.Ack {
+		t.Fatalf("Expected ACK packet, got %v\n", ackPacket.Type)
+	}
+
+	if *ackPacket.ID != id {
+		t.Fatalf("Expected ACK packet ID %v, got %v\n", id, *ackPacket.ID)
+	}
+}
+
 func TestSocketEmit(t *testing.T) {
 	s := Socket{}
 	s.outgoingPackets = make(chan socket.Packet, 1)
@@ -141,7 +238,6 @@ func TestSocketEmit(t *testing.T) {
 			t.Errorf("Expected second data element to be string, got %T", second)
 		}
 	}
-
 }
 
 func TestSocketSend(t *testing.T) {
