@@ -27,7 +27,7 @@ var maxSafeInteger = int64(math.Pow(2, 53) - 1)
 
 type AckFunc func(id int64, data interface{})
 
-var ErrNoHandler = errors.New("No handler registered")
+var errNoHandler = errors.New("No handler registered")
 var ErrNotConnected = errors.New("Not connected")
 var ErrBlacklistedEvent = errors.New("Blacklisted event")
 
@@ -238,7 +238,7 @@ func (s *Socket) raiseEvent(eventName string, data []interface{}) (interface{}, 
 		}
 	}
 
-	return nil, ErrNoHandler
+	return nil, errNoHandler
 
 }
 
@@ -246,7 +246,7 @@ func (s *Socket) raiseAck(id int64, data interface{}) error {
 	var handlerVal interface{}
 	var ok bool
 	if handlerVal, ok = s.acks.Load(id); !ok {
-		return ErrNoHandler
+		return errNoHandler
 	}
 
 	handler := handlerVal.(AckFunc)
