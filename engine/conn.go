@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -13,14 +12,6 @@ import (
 
 	"github.com/gorilla/websocket"
 )
-
-type Dialer func(address string) (*Conn, error)
-
-func ContextDialer(ctx context.Context, address string, timeout time.Duration) Dialer {
-	return func(address string) (*Conn, error) {
-		return DialContext(ctx, address, timeout)
-	}
-}
 
 type Transport interface {
 	ID() string
@@ -236,6 +227,13 @@ func fixupAddress(address string) (*url.URL, error) {
 		parsedAddress.Path = newPath
 	}
 
+	eio := fmt.Sprintf("%v", ParserProtocol)
+
+	query := parsedAddress.Query()
+	query.Set("EIO", eio)
+	query.Set("transport", "websocket")
+	parsedAddress.RawQuery = query.Encode()
+
 	return parsedAddress, nil
 }
 
@@ -247,21 +245,13 @@ func DialContext(ctx context.Context, address string, timeout time.Duration) (*C
 		return nil, err
 	}
 
-	eio := fmt.Sprintf("%v", ParserProtocol)
-
-	query := parsedAddress.Query()
-	query.Set("EIO", eio)
-	query.Set("transport", "websocket")
-	parsedAddress.RawQuery = query.Encode()
-
 	fmt.Println("Dialing", parsedAddress.String())
 
-	dialer := websocket.DefaultDialer
-	dialer.NetDial = func(network, address string) (net.Conn, error) {
-		return net.DialTimeout(network, address, timeout)
-	}
+	deadlineCtx, deadlineCancel := context.WithDeadline(ctx, time.Now().Add(timeout))
 
-	socket, _, err := dialer.DialContext(ctx, parsedAddress.String(), nil)
+	defer deadlineCancel()
+
+	socket, _, err := websocket.DefaultDialer.DialContext(deadlineCtx, parsedAddress.String(), nil)
 
 	if err != nil {
 		fmt.Println(err)
