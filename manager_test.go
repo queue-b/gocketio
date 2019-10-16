@@ -203,8 +203,6 @@ func TestManagerNamespaceWithNewSocket(t *testing.T) {
 func TestConnectContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	invoked := make(chan struct{}, 1)
-
 	addr, err := url.Parse("http://test.com")
 
 	if err != nil {
@@ -218,13 +216,7 @@ func TestConnectContext(t *testing.T) {
 		sockets:   make(map[string]*Socket),
 	}
 
-	err = connectContext(ctx, m, func(address string) (*engine.Conn, error) {
-		invoked <- struct{}{}
-		return &engine.Conn{
-			Send:    make(chan engine.Packet, 1),
-			Receive: make(chan engine.Packet, 1),
-		}, nil
-	})
+	err = connectContext(ctx, m)
 
 	cancel()
 

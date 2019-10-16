@@ -16,6 +16,9 @@ import (
 	"github.com/queue-b/gocketio/engine"
 )
 
+// ErrInvalidAddress is returned when the user-supplied address is invalid
+var ErrInvalidAddress = errors.New("Invalid address")
+
 // ManagerConfig contains configuration information for a Manager
 type ManagerConfig struct {
 	BackOff             backoff.BackOff
@@ -226,10 +229,10 @@ func (m *Manager) onReconnect() {
 	}
 }
 
-func connectContext(ctx context.Context, m *Manager, dialer engine.Dialer) error {
+func connectContext(ctx context.Context, m *Manager) error {
 	managerCtx, cancel := context.WithCancel(ctx)
 
-	conn, err := dialer(m.address.String())
+	conn, err := engine.DialContext(ctx, m.address.String(), m.opts.ConnectionTimeout)
 
 	if err != nil {
 		cancel()
@@ -256,22 +259,19 @@ func connectContext(ctx context.Context, m *Manager, dialer engine.Dialer) error
 
 func reconnect(ctx context.Context, m *Manager) func() error {
 	return func() error {
-		return connectContext(ctx, m, engine.ContextDialer(ctx, m.address.String(), m.opts.ConnectionTimeout))
+		return connectContext(ctx, m)
 	}
 }
 
-// DialContext attempts to connect to the Socket.IO server at address
-func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Manager, error) {
-	if cfg == nil {
-		return nil, errors.New("Missing config")
-	}
-
-	manager := &Manager{}
-
+func fixupAddress(address string, additionaQueryArgs map[string]string) (*url.URL, error) {
 	parsedAddress, err := url.Parse(address)
 
 	if err != nil {
 		return nil, err
+	}
+
+	if parsedAddress.Scheme != "http" && parsedAddress.Scheme != "https" {
+		return nil, ErrInvalidAddress
 	}
 
 	if parsedAddress.Path == "/" || parsedAddress.Path == "" {
@@ -282,12 +282,29 @@ func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Mana
 
 	vals := parsedAddress.Query()
 
-	if cfg.AdditionalQueryArgs != nil {
-		for k, v := range cfg.AdditionalQueryArgs {
+	if additionaQueryArgs != nil {
+		for k, v := range additionaQueryArgs {
 			vals.Add(k, v)
 		}
 
 		parsedAddress.RawQuery = vals.Encode()
+	}
+
+	return parsedAddress, nil
+}
+
+// DialContext attempts to connect to the Socket.IO server at address
+func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Manager, error) {
+	if cfg == nil {
+		return nil, errors.New("Missing config")
+	}
+
+	manager := &Manager{}
+
+	parsedAddress, err := fixupAddress(address, cfg.AdditionalQueryArgs)
+
+	if err != nil {
+		return nil, err
 	}
 
 	manager.fromSockets = make(chan socket.Packet)
