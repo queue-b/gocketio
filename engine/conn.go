@@ -81,10 +81,6 @@ func (conn *Conn) receiveFromTransport(ctx context.Context) error {
 	switch t {
 	case websocket.CloseMessage:
 		return &websocket.CloseError{}
-	case websocket.PongMessage:
-		fmt.Println("Received ws Pong message")
-	case websocket.PingMessage:
-		fmt.Println("Received ws Ping message")
 	case websocket.BinaryMessage:
 		fmt.Println("Received ws BinaryMessage")
 		packet, err = DecodeBinaryPacket(message)
