@@ -68,6 +68,56 @@ func TestDecodeStringPacketWithStringPayload(t *testing.T) {
 	}
 }
 
+func TestDecodeShortStringPacket(t *testing.T) {
+	p, err := DecodeStringPacket("0")
+
+	if err != nil {
+		t.Fatalf("Unexpected error while decoding string packet %v\n", err)
+	}
+
+	if p.GetType() != Open {
+		t.Fatal("Expected Open packet type")
+	}
+}
+
+func TestDecodeRuntStringPacket(t *testing.T) {
+	_, err := DecodeStringPacket("")
+
+	if err != ErrPacketTooShort {
+		t.Fatal("Should return error on short packet")
+	}
+}
+
+func TestDecodeRuntBinaryPacket(t *testing.T) {
+	_, err := DecodeBinaryPacket([]byte{0})
+
+	if err != ErrPacketTooShort {
+		t.Fatal("Should return error on short packet")
+	}
+}
+
+func TestDecodeInvalidStringPacket(t *testing.T) {
+	_, err := DecodeStringPacket("z")
+
+	if err != ErrInvalidType {
+		t.Fatal("Should return error on invalid packet type")
+	}
+}
+
+func TestDecodeMalformedBinaryStringPacket(t *testing.T) {
+	_, err := DecodeStringPacket("bzxxx")
+
+	if err != ErrInvalidType {
+		t.Fatal("Should return error on invalid packet type")
+	}
+
+	_, err = DecodeStringPacket("b4AAECAw")
+
+	if err == nil {
+		t.Fatalf("Should return error on invalid base64 encoding")
+	}
+}
+
 func TestDecodeBinaryPacket(t *testing.T) {
 	testData := []byte{04, 00, 01, 02, 03, 04}
 
