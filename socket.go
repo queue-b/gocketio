@@ -25,6 +25,7 @@ type AckFunc func(id int, data interface{})
 
 var ErrNoHandler = errors.New("No handler registered")
 var ErrNotConnected = errors.New("Not connected")
+var ErrBlacklistedEvent = errors.New("Blacklisted event")
 
 // Socket is a Socket.IO socket that can send messages to and
 // received messages from a namespace
@@ -57,6 +58,41 @@ func (s *Socket) ID() string {
 // events from
 func (s *Socket) Namespace() string {
 	return s.namespace
+}
+
+// There are certain events that users are not allowed to emit
+// https://github.com/socketio/socket.io-client/blob/71d7b799652d3c80b00b24d99b33b626841e5631/lib/socket.js#L28
+func isBlacklisted(event string) bool {
+	switch event {
+	case "connect":
+		fallthrough
+	case "connect_error":
+		fallthrough
+	case "connect_timeout":
+		fallthrough
+	case "connecting":
+		fallthrough
+	case "disconnect":
+		fallthrough
+	case "error":
+		fallthrough
+	case "reconnect":
+		fallthrough
+	case "reconnect_attempt":
+		fallthrough
+	case "reconnect_failed":
+		fallthrough
+	case "reconnect_error":
+		fallthrough
+	case "reconnecting":
+		fallthrough
+	case "ping":
+		fallthrough
+	case "pong":
+		return true
+	default:
+		return false
+	}
 }
 
 // On adds the event handler for the event
@@ -97,6 +133,10 @@ func (s *Socket) checkState() error {
 
 // Emit raises an event on the server
 func (s *Socket) Emit(event string, data ...interface{}) error {
+	if isBlacklisted(event) {
+		return ErrBlacklistedEvent
+	}
+
 	err := s.checkState()
 
 	if err != nil {
@@ -126,6 +166,10 @@ func (s *Socket) Emit(event string, data ...interface{}) error {
 // EmitWithAck raises an event on the server, and registers a callback that is invoked
 // when the server acknowledges receipt
 func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{}) error {
+	if isBlacklisted(event) {
+		return ErrBlacklistedEvent
+	}
+
 	err := s.checkState()
 
 	if err != nil {
