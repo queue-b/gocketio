@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -21,7 +22,10 @@ const (
 	Errored
 )
 
-type AckFunc func(id int, data interface{})
+// Javascript Number.MAX_SAFE_INTEGER
+var maxSafeInteger = int64(math.Pow(2, 53) - 1)
+
+type AckFunc func(id int64, data interface{})
 
 var ErrNoHandler = errors.New("No handler registered")
 var ErrNotConnected = errors.New("Not connected")
@@ -36,10 +40,15 @@ type Socket struct {
 	namespace       string
 	incomingPackets chan socket.Packet
 	outgoingPackets chan socket.Packet
-	ackCounter      int32
-	currentState    SocketState
-	id              string
-	err             error
+	// ackCounter is a bit tricky. The largest number we should ever see from or send to JS is
+	// Number.MAX_SAFE_INTEGER
+	// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER
+	// Which is currently ((2^53) - 1)
+	// There isn't
+	ackCounter   int64
+	currentState SocketState
+	id           string
+	err          error
 }
 
 // State returns the current state of the socket
@@ -188,9 +197,12 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 	}
 
 	message.Data = messageData
-	ackCount := int(s.ackCounter)
+
+	ackCount := atomic.LoadInt64(&s.ackCounter)
+
 	message.ID = &ackCount
-	atomic.AddInt32(&s.ackCounter, 1)
+
+	atomic.StoreInt64(&s.ackCounter, (ackCount+1)%maxSafeInteger)
 
 	s.acks.Store(ackCount, ackFunc)
 
@@ -224,14 +236,13 @@ func (s *Socket) raiseEvent(eventName string, data []interface{}) (interface{}, 
 		if len(handlerResults) == 0 {
 			return nil, nil
 		}
-
-		return handlerResults, nil
 	}
 
 	return nil, ErrNoHandler
+
 }
 
-func (s *Socket) raiseAck(id int, data interface{}) error {
+func (s *Socket) raiseAck(id int64, data interface{}) error {
 	var handlerVal interface{}
 	var ok bool
 	if handlerVal, ok = s.acks.Load(id); !ok {
@@ -246,7 +257,7 @@ func (s *Socket) raiseAck(id int, data interface{}) error {
 	return nil
 }
 
-func (s *Socket) sendAck(id int, data interface{}) {
+func (s *Socket) sendAck(id int64, data interface{}) {
 	p := socket.Packet{
 		Type:      socket.Ack,
 		ID:        &id,

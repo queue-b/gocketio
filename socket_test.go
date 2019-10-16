@@ -222,7 +222,7 @@ func TestEventBlacklist(t *testing.T) {
 		t.Fatal("Emit should not emit a blacklisted event")
 	}
 
-	err = s.EmitWithAck("connect", func(id int, data interface{}) {}, "hello")
+	err = s.EmitWithAck("connect", func(id int64, data interface{}) {}, "hello")
 
 	if err != ErrBlacklistedEvent {
 		t.Fatal("EmitWithAck should not emit a blacklisted event")

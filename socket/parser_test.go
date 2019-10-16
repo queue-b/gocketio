@@ -3,7 +3,7 @@ package socket
 import "testing"
 
 func TestEncodeConnectWithID(t *testing.T) {
-	id := 1
+	id := int64(1)
 	p := Packet{
 		ID:   &id,
 		Type: Connect,
@@ -43,7 +43,7 @@ func TestEncodeDisconnect(t *testing.T) {
 }
 
 func TestEncodeEventWithNamespaceAndID(t *testing.T) {
-	id := 1
+	id := int64(1)
 	p := Packet{
 		Type:      Event,
 		Namespace: "/test",
@@ -65,7 +65,7 @@ func TestEncodeEventWithNamespaceAndID(t *testing.T) {
 }
 
 func TestEncodeSimpleBinary(t *testing.T) {
-	id := 23
+	id := int64(23)
 
 	/* 51-/cool,23["a",{"_placeholder":true,"num":0}]
 	<Buffer 61 62 63> */
@@ -96,7 +96,7 @@ func TestEncodeSimpleBinary(t *testing.T) {
 }
 
 func TestEncodeBinaryFixedLengthByteArray(t *testing.T) {
-	id := 23
+	id := int64(23)
 
 	/* 51-/cool,23["a",{"_placeholder":true,"num":0}]
 	<Buffer 61 62 63> */
@@ -126,7 +126,7 @@ func TestEncodeBinaryFixedLengthByteArray(t *testing.T) {
 }
 
 func TestEncodeBinaryByteArrayInStruct(t *testing.T) {
-	id := 23
+	id := int64(23)
 
 	/* 51-/cool,23["a",{"_placeholder":true,"num":0}]
 	<Buffer 61 62 63> */
