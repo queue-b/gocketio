@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -13,21 +14,34 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// ErrDisconnected is returned when the transport is closed
+var ErrDisconnected = errors.New("Transport disconnected")
+
+type openData struct {
+	SID          string `json:"sid"`
+	PingInterval int64
+	PingTimeout  int64
+}
+
 type Transport interface {
 	ID() string
 	SupportsBinary() bool
 }
 
+type ConnConfig struct {
+	ConnectTimeout        time.Duration
+	OutgoingChannelLength int32
+}
+
 // Conn is a connection to an Engine.IO connection
 type Conn struct {
 	sync.RWMutex
+	readMutex  sync.Mutex
+	writeMutex sync.Mutex
 	socket     *websocket.Conn
 	id         string
-	disconnect chan struct{}
-	Errors     chan error
-	Send       chan Packet
-	Receive    chan Packet
-	cancel     context.CancelFunc
+	cancelPing context.CancelFunc
+	pong       chan struct{}
 }
 
 // ID returns the remote ID assigned to this connection
@@ -37,169 +51,14 @@ func (conn *Conn) ID() string {
 	return conn.id
 }
 
-// Disconnected returns a channel that is closed when the Conn disconnects
-func (conn *Conn) Disconnected() <-chan struct{} {
-	return conn.disconnect
-}
-
 // SupportsBinary returns true if the underlying connection supports sending raw binary data (bytes),
 // false otherwise
 func (conn *Conn) SupportsBinary() bool { return true }
-
-func (conn *Conn) startEnginePing(ctx context.Context, pingInterval time.Duration) {
-	t := time.NewTicker(pingInterval)
-
-	p := &StringPacket{Type: Ping}
-
-	conn.Send <- p
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			p = &StringPacket{Type: Ping}
-			conn.Send <- p
-		}
-	}
-}
 
 func (conn *Conn) setID(id string) {
 	conn.Lock()
 	defer conn.Unlock()
 	conn.id = id
-}
-
-func (conn *Conn) receiveFromTransport(ctx context.Context) error {
-	t, message, err := conn.socket.ReadMessage()
-	var packet Packet
-
-	if err != nil {
-		return err
-	}
-
-	switch t {
-	case websocket.CloseMessage:
-		return &websocket.CloseError{}
-	case websocket.BinaryMessage:
-		fmt.Println("Received ws BinaryMessage")
-		packet, err = DecodeBinaryPacket(message)
-
-		if err != nil {
-			return err
-		}
-	// Ping, Pong, Close, and Error messages all optionally have string data attached
-	case websocket.TextMessage:
-		packet, err = DecodeStringPacket(string(message))
-
-		if err != nil {
-			return err
-		}
-	}
-
-	switch packet.GetType() {
-	case Open:
-		data := openData{}
-
-		if packet.GetData() != nil {
-			err = json.Unmarshal(packet.GetData(), &data)
-
-			if err != nil {
-				return err
-			}
-
-			conn.setID(data.SID)
-			go conn.startEnginePing(ctx, time.Duration(data.PingInterval)*time.Millisecond)
-		}
-	case Message:
-		fmt.Printf("[transport] Received message %v\n", packet)
-		conn.Receive <- packet
-	case Ping:
-		fmt.Println("Received Ping")
-	case Pong:
-		fmt.Println("Received Pong")
-	case Close:
-		fmt.Println("Received Close")
-	case NoOp:
-		fmt.Println("Received NoOp")
-	case Upgrade:
-		fmt.Println("Received Upgrade")
-	}
-
-	return nil
-}
-
-func (conn *Conn) receiveMessages(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			fmt.Println("ReceiveFromTransport")
-			err := conn.receiveFromTransport(ctx)
-
-			if err != nil {
-				conn.Errors <- err
-
-				if _, ok := err.(*websocket.CloseError); ok {
-					conn.cancel()
-					close(conn.Receive)
-					close(conn.disconnect)
-					return
-				}
-			}
-		}
-	}
-}
-
-func (conn *Conn) sendToTransport(message Packet) error {
-	if message == nil {
-		return errors.New("Cannot send nil message")
-	}
-
-	data, err := message.Encode(true)
-
-	if err != nil {
-		return err
-	}
-
-	switch message.(type) {
-	case *StringPacket:
-		err = conn.socket.WriteMessage(websocket.TextMessage, data)
-	case *BinaryPacket:
-		err = conn.socket.WriteMessage(websocket.BinaryMessage, data)
-	}
-
-	return err
-}
-
-func (conn *Conn) sendMessages(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			message, ok := <-conn.Send
-
-			if !ok {
-				return
-			}
-
-			err := conn.sendToTransport(message)
-
-			if err != nil {
-				// TODO: Check for special websocket error
-				fmt.Printf("Error sending %v", err)
-				conn.Errors <- err
-			}
-		}
-	}
-}
-
-type openData struct {
-	SID          string `json:"sid"`
-	PingInterval int
-	PingTimeout  int
 }
 
 func fixupAddress(address string) (*url.URL, error) {
@@ -233,44 +92,216 @@ func fixupAddress(address string) (*url.URL, error) {
 	return parsedAddress, nil
 }
 
+func (conn *Conn) Write(packet Packet) error {
+	if packet == nil {
+		return errors.New("Cannot send nil message")
+	}
+
+	data, err := packet.Encode(conn.SupportsBinary())
+
+	if err != nil {
+		return err
+	}
+
+	conn.writeMutex.Lock()
+	defer conn.writeMutex.Unlock()
+	switch packet.(type) {
+	case *StringPacket:
+		err = conn.socket.WriteMessage(websocket.TextMessage, data)
+	case *BinaryPacket:
+		err = conn.socket.WriteMessage(websocket.BinaryMessage, data)
+	}
+
+	return err
+}
+
+func (conn *Conn) Read() (Packet, error) {
+	conn.readMutex.Lock()
+	t, message, err := conn.socket.ReadMessage()
+	conn.readMutex.Unlock()
+	var packet Packet
+
+	if err != nil {
+		switch err.(type) {
+		case *websocket.CloseError:
+			return nil, ErrDisconnected
+		case *net.OpError:
+			return nil, ErrDisconnected
+
+		}
+
+		return nil, err
+	}
+
+	switch t {
+	case websocket.BinaryMessage:
+		packet, err = DecodeBinaryPacket(message)
+
+		if err != nil {
+			return nil, err
+		}
+	// Ping, Pong, Close, and Error messages all optionally have string data attached
+	case websocket.TextMessage:
+		packet, err = DecodeStringPacket(string(message))
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	switch packet.GetType() {
+	case Open:
+		err = conn.onOpen(packet)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return packet, nil
+	case Message:
+		return packet, nil
+	case Pong:
+		conn.onPong()
+		return packet, nil
+	case Upgrade:
+		return packet, nil
+	case Close:
+		return nil, ErrDisconnected
+	case NoOp:
+		return packet, nil
+	}
+
+	return nil, nil
+}
+
+func (conn *Conn) onPong() {
+	conn.pong <- struct{}{}
+}
+
+func (conn *Conn) onOpen(packet Packet) error {
+	if packet.GetData() == nil {
+		return errors.New("Invalid open packet")
+	}
+
+	data := openData{}
+	err := json.Unmarshal(packet.GetData(), &data)
+
+	if err != nil {
+		return err
+	}
+
+	conn.setID(data.SID)
+	// TODO: Make sure that PingInterval > PingTimeout by some amount
+	// TODO: Make sure that PingInterval && PingTimeout > 0
+	conn.startPing(time.Duration(data.PingInterval)*time.Millisecond,
+		time.Duration(data.PingTimeout)*time.Millisecond)
+
+	return nil
+}
+
+func (conn *Conn) startPing(pingInterval, pingTimeout time.Duration) {
+	conn.RLock()
+
+	if conn.cancelPing == nil {
+		conn.RUnlock()
+		conn.Lock()
+
+		if conn.cancelPing == nil {
+			ctx, cancel := context.WithCancel(context.Background())
+			go conn.pingContext(ctx, pingInterval, pingTimeout)
+			conn.cancelPing = cancel
+		}
+
+		conn.Unlock()
+
+		return
+	}
+
+	conn.RUnlock()
+}
+
+func (conn *Conn) pingContext(ctx context.Context, pingInterval, pingTimeout time.Duration) {
+	ticker := time.NewTicker(pingInterval)
+	for {
+		select {
+		case <-ctx.Done():
+			ticker.Stop()
+			select {
+			case <-ticker.C:
+			default:
+			}
+			return
+		case <-ticker.C:
+			ping := &StringPacket{Type: Ping}
+
+			err := conn.Write(ping)
+
+			if err != nil {
+				conn.Close()
+				return
+			}
+
+			go func() {
+				timer := time.NewTimer(pingTimeout)
+
+				select {
+				case <-timer.C:
+					ticker.Stop()
+
+					select {
+					case <-ticker.C:
+					default:
+					}
+
+					conn.Close()
+				case <-conn.pong:
+					timer.Stop()
+					select {
+					case <-timer.C:
+					default:
+					}
+					return
+				}
+			}()
+		}
+	}
+}
+
+// Close closes the underlying transport
+func (conn *Conn) Close() error {
+	conn.RLock()
+
+	if conn.cancelPing != nil {
+		conn.RUnlock()
+		conn.Lock()
+		conn.cancelPing()
+		conn.cancelPing = nil
+		conn.Unlock()
+	} else {
+		conn.RUnlock()
+	}
+
+	return conn.socket.Close()
+}
+
 // DialContext creates a Conn to the Engine.IO server located at address
-func DialContext(ctx context.Context, address string, timeout time.Duration) (*Conn, error) {
+func DialContext(ctx context.Context, address string) (*Conn, error) {
 	parsedAddress, err := fixupAddress(address)
 
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("Dialing", parsedAddress.String())
-
-	deadlineCtx, deadlineCancel := context.WithDeadline(ctx, time.Now().Add(timeout))
-
-	defer deadlineCancel()
-
-	socket, _, err := websocket.DefaultDialer.DialContext(deadlineCtx, parsedAddress.String(), nil)
+	socket, _, err := websocket.DefaultDialer.DialContext(ctx, parsedAddress.String(), nil)
 
 	if err != nil {
-		fmt.Println(err)
 		return nil, err
 	}
 
-	errs := make(chan error, 10000)
-	sends := make(chan Packet, 10000)
-	receives := make(chan Packet, 10000)
-	disconnects := make(chan struct{}, 10000)
-	runCtx, cancel := context.WithCancel(ctx)
-
 	conn := &Conn{
-		socket:     socket,
-		Errors:     errs,
-		Send:       sends,
-		Receive:    receives,
-		disconnect: disconnects,
-		cancel:     cancel,
+		socket: socket,
+		pong:   make(chan struct{}),
 	}
-
-	go conn.receiveMessages(runCtx)
-	go conn.sendMessages(runCtx)
 
 	return conn, nil
 }
