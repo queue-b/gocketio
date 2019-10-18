@@ -40,8 +40,6 @@ type Conn struct {
 	writeMutex sync.Mutex
 	socket     *websocket.Conn
 	id         string
-	cancelPing context.CancelFunc
-	pong       chan struct{}
 }
 
 // ID returns the remote ID assigned to this connection
@@ -161,7 +159,6 @@ func (conn *Conn) Read() (Packet, error) {
 	case Message:
 		return packet, nil
 	case Pong:
-		conn.onPong()
 		return packet, nil
 	case Upgrade:
 		return packet, nil
@@ -172,10 +169,6 @@ func (conn *Conn) Read() (Packet, error) {
 	}
 
 	return nil, nil
-}
-
-func (conn *Conn) onPong() {
-	conn.pong <- struct{}{}
 }
 
 func (conn *Conn) onOpen(packet Packet) error {
@@ -191,96 +184,11 @@ func (conn *Conn) onOpen(packet Packet) error {
 	}
 
 	conn.setID(data.SID)
-	// TODO: Make sure that PingInterval > PingTimeout by some amount
-	// TODO: Make sure that PingInterval && PingTimeout > 0
-	conn.startPing(time.Duration(data.PingInterval)*time.Millisecond,
-		time.Duration(data.PingTimeout)*time.Millisecond)
-
 	return nil
-}
-
-func (conn *Conn) startPing(pingInterval, pingTimeout time.Duration) {
-	conn.RLock()
-
-	if conn.cancelPing == nil {
-		conn.RUnlock()
-		conn.Lock()
-
-		if conn.cancelPing == nil {
-			ctx, cancel := context.WithCancel(context.Background())
-			go conn.pingContext(ctx, pingInterval, pingTimeout)
-			conn.cancelPing = cancel
-		}
-
-		conn.Unlock()
-
-		return
-	}
-
-	conn.RUnlock()
-}
-
-func (conn *Conn) pingContext(ctx context.Context, pingInterval, pingTimeout time.Duration) {
-	ticker := time.NewTicker(pingInterval)
-	for {
-		select {
-		case <-ctx.Done():
-			ticker.Stop()
-			select {
-			case <-ticker.C:
-			default:
-			}
-			return
-		case <-ticker.C:
-			ping := &StringPacket{Type: Ping}
-
-			err := conn.Write(ping)
-
-			if err != nil {
-				conn.Close()
-				return
-			}
-
-			go func() {
-				timer := time.NewTimer(pingTimeout)
-
-				select {
-				case <-timer.C:
-					ticker.Stop()
-
-					select {
-					case <-ticker.C:
-					default:
-					}
-
-					conn.Close()
-				case <-conn.pong:
-					timer.Stop()
-					select {
-					case <-timer.C:
-					default:
-					}
-					return
-				}
-			}()
-		}
-	}
 }
 
 // Close closes the underlying transport
 func (conn *Conn) Close() error {
-	conn.RLock()
-
-	if conn.cancelPing != nil {
-		conn.RUnlock()
-		conn.Lock()
-		conn.cancelPing()
-		conn.cancelPing = nil
-		conn.Unlock()
-	} else {
-		conn.RUnlock()
-	}
-
 	return conn.socket.Close()
 }
 
@@ -300,7 +208,6 @@ func DialContext(ctx context.Context, address string) (*Conn, error) {
 
 	conn := &Conn{
 		socket: socket,
-		pong:   make(chan struct{}),
 	}
 
 	return conn, nil
