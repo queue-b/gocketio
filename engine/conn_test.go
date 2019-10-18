@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -14,27 +14,10 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var ports = map[int64]bool{}
-var mutex = sync.Mutex{}
+func createServer(mux *http.ServeMux) (*httptest.Server, string) {
+	server := httptest.NewUnstartedServer(mux)
 
-func createServer(mux *http.ServeMux) (*http.Server, string) {
-	port := rand.Int63n(65535-1024) + 1024
-
-	mutex.Lock()
-	defer mutex.Unlock()
-	for {
-		if _, ok := ports[port]; !ok {
-			ports[port] = true
-			break
-		}
-	}
-
-	srv := http.Server{Addr: fmt.Sprintf("localhost:%v", port)}
-	srv.Handler = mux
-
-	go srv.ListenAndServe()
-
-	return &srv, fmt.Sprintf("http://localhost:%v/socket.io/", port)
+	return server, fmt.Sprintf("http://%v/socket.io/", server.Listener.Addr())
 }
 
 func createHandler(handler func(c *websocket.Conn)) http.HandlerFunc {
@@ -92,10 +75,6 @@ func TestDialContext(t *testing.T) {
 	mux := http.NewServeMux()
 
 	srv, address := createServer(mux)
-	srv.Handler = mux
-
-	var wg sync.WaitGroup
-	wg.Add(1)
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
 		for {
@@ -115,9 +94,9 @@ func TestDialContext(t *testing.T) {
 
 	deadlineCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(250*time.Millisecond))
 
-	go srv.ListenAndServe()
+	go srv.Start()
 	defer cancel()
-	defer srv.Shutdown(deadlineCtx)
+	defer srv.Close()
 
 	_, err := DialContext(deadlineCtx, address)
 
@@ -130,7 +109,6 @@ func TestConnectionWrite(t *testing.T) {
 	mux := http.NewServeMux()
 
 	srv, address := createServer(mux)
-	srv.Handler = mux
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -154,13 +132,10 @@ func TestConnectionWrite(t *testing.T) {
 		wg.Done()
 	}))
 
-	deadlineCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(1*time.Second))
+	go srv.Start()
+	defer srv.Close()
 
-	go srv.ListenAndServe()
-	defer cancel()
-	defer srv.Shutdown(deadlineCtx)
-
-	conn, err := DialContext(deadlineCtx, address)
+	conn, err := DialContext(context.Background(), address)
 
 	if err != nil {
 		t.Fatalf("Unable to connect %v\n", err)
@@ -192,7 +167,6 @@ func TestConnectionRead(t *testing.T) {
 	mux := http.NewServeMux()
 
 	srv, address := createServer(mux)
-	srv.Handler = mux
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
 		for {
@@ -213,13 +187,10 @@ func TestConnectionRead(t *testing.T) {
 		}
 	}))
 
-	deadlineCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(1*time.Second))
+	go srv.Start()
+	defer srv.Close()
 
-	go srv.ListenAndServe()
-	defer cancel()
-	defer srv.Shutdown(deadlineCtx)
-
-	conn, err := DialContext(deadlineCtx, address)
+	conn, err := DialContext(context.Background(), address)
 
 	if err != nil {
 		t.Fatalf("Unable to connect %v\n", err)
@@ -244,7 +215,6 @@ func TestConnectionReadCloseMessage(t *testing.T) {
 	mux := http.NewServeMux()
 
 	srv, address := createServer(mux)
-	srv.Handler = mux
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
 		for {
@@ -256,13 +226,10 @@ func TestConnectionReadCloseMessage(t *testing.T) {
 		}
 	}))
 
-	deadlineCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(1*time.Second))
+	go srv.Start()
+	defer srv.Close()
 
-	go srv.ListenAndServe()
-	defer cancel()
-	defer srv.Shutdown(deadlineCtx)
-
-	conn, err := DialContext(deadlineCtx, address)
+	conn, err := DialContext(context.Background(), address)
 
 	if err != nil {
 		t.Fatalf("Unable to connect %v\n", err)
@@ -279,7 +246,6 @@ func TestConnectionReadOpenMessage(t *testing.T) {
 	mux := http.NewServeMux()
 
 	srv, address := createServer(mux)
-	srv.Handler = mux
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
 		openContent := openData{
@@ -303,13 +269,10 @@ func TestConnectionReadOpenMessage(t *testing.T) {
 		}
 	}))
 
-	deadlineCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(1*time.Second))
+	go srv.Start()
+	defer srv.Close()
 
-	go srv.ListenAndServe()
-	defer cancel()
-	defer srv.Shutdown(deadlineCtx)
-
-	conn, err := DialContext(deadlineCtx, address)
+	conn, err := DialContext(context.Background(), address)
 
 	if err != nil {
 		t.Fatalf("Unable to connect %v\n", err)

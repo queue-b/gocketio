@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -21,10 +22,10 @@ type KeepAliveConn struct {
 }
 
 // NewKeepAliveConn returns a new instance of KeepAliveConn
-func NewKeepAliveConn(conn *Conn, outgoing <-chan Packet) *KeepAliveConn {
+func NewKeepAliveConn(conn *Conn, readBufferSize int, outgoing <-chan Packet) *KeepAliveConn {
 	return &KeepAliveConn{
 		conn:  conn,
-		read:  make(chan Packet),
+		read:  make(chan Packet, readBufferSize),
 		write: outgoing,
 		ping:  make(chan Packet),
 		pong:  make(chan struct{}),
@@ -36,6 +37,11 @@ func NewKeepAliveConn(conn *Conn, outgoing <-chan Packet) *KeepAliveConn {
 func (k *KeepAliveConn) ID() string {
 	k.RLock()
 	defer k.RUnlock()
+
+	if k.conn == nil {
+		return ""
+	}
+
 	return k.conn.ID()
 }
 
@@ -43,6 +49,11 @@ func (k *KeepAliveConn) ID() string {
 func (k *KeepAliveConn) SupportsBinary() bool {
 	k.RLock()
 	defer k.RUnlock()
+
+	if k.conn == nil {
+		return false
+	}
+
 	return k.conn.SupportsBinary()
 }
 
@@ -56,6 +67,7 @@ func (k *KeepAliveConn) Read() chan<- Packet {
 
 // Close stops the Ping/Pong process and closes the wrapped Conn
 func (k *KeepAliveConn) Close() error {
+	fmt.Println("Close")
 	k.Lock()
 	defer k.Unlock()
 
@@ -117,6 +129,14 @@ func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
 	keepAliveInterval := time.Duration(data.PingInterval) * time.Millisecond
 	keepAliveTimeout := time.Duration(data.PingTimeout) * time.Millisecond
 
+	// Send an initial ping
+	select {
+	case <-ctx.Done():
+		return
+	case k.ping <- &StringPacket{Type: Ping}:
+		go k.checkKeepAliveContext(ctx, keepAliveTimeout)
+	}
+
 	ticker := time.NewTicker(keepAliveInterval)
 
 	for {
@@ -168,6 +188,13 @@ func (k *KeepAliveConn) readContext(ctx context.Context) {
 			if err != nil {
 				k.Close()
 				return
+			}
+
+			switch packet.GetType() {
+			case Open:
+				k.open <- packet
+			case Pong:
+				k.pong <- struct{}{}
 			}
 
 			k.read <- packet
