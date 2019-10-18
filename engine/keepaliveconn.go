@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -12,17 +11,19 @@ import (
 // KeepAliveConn wraps a Conn and handles the Ping/Pong process
 type KeepAliveConn struct {
 	sync.RWMutex
-	conn   *Conn
-	read   chan Packet
-	write  <-chan Packet
-	ping   chan Packet
-	pong   chan struct{}
-	open   chan Packet
-	cancel context.CancelFunc
+	conn     *Conn
+	read     chan Packet
+	write    chan Packet
+	ping     chan Packet
+	pong     chan struct{}
+	open     chan Packet
+	cancel   context.CancelFunc
+	once     *sync.Once
+	closeErr error
 }
 
 // NewKeepAliveConn returns a new instance of KeepAliveConn
-func NewKeepAliveConn(conn *Conn, readBufferSize int, outgoing <-chan Packet) *KeepAliveConn {
+func NewKeepAliveConn(conn *Conn, readBufferSize int, outgoing chan Packet) *KeepAliveConn {
 	return &KeepAliveConn{
 		conn:  conn,
 		read:  make(chan Packet, readBufferSize),
@@ -30,6 +31,7 @@ func NewKeepAliveConn(conn *Conn, readBufferSize int, outgoing <-chan Packet) *K
 		ping:  make(chan Packet),
 		pong:  make(chan struct{}),
 		open:  make(chan Packet),
+		once:  &sync.Once{},
 	}
 }
 
@@ -57,33 +59,24 @@ func (k *KeepAliveConn) SupportsBinary() bool {
 	return k.conn.SupportsBinary()
 }
 
-func (k *KeepAliveConn) Write() <-chan Packet {
+func (k *KeepAliveConn) Write() chan<- Packet {
 	return k.write
 }
 
-func (k *KeepAliveConn) Read() chan<- Packet {
+func (k *KeepAliveConn) Read() <-chan Packet {
 	return k.read
 }
 
 // Close stops the Ping/Pong process and closes the wrapped Conn
 func (k *KeepAliveConn) Close() error {
-	fmt.Println("Close")
-	k.Lock()
-	defer k.Unlock()
+	k.once.Do(func() {
+		k.cancel()
+		k.closeErr = k.conn.Close()
+		k.conn = nil
+		k.cancel = nil
+	})
 
-	if k.conn == nil {
-		return nil
-	}
-
-	if k.cancel == nil {
-		return nil
-	}
-
-	k.cancel()
-	err := k.conn.Close()
-	k.conn = nil
-
-	return err
+	return k.closeErr
 }
 
 // KeepAliveContext starts the Ping/Pong process
@@ -142,10 +135,12 @@ func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			close(k.ping)
 			return
 		case <-ticker.C:
 			select {
 			case <-ctx.Done():
+				close(k.ping)
 				return
 			case k.ping <- &StringPacket{Type: Ping}:
 				go k.checkKeepAliveContext(ctx, keepAliveTimeout)

@@ -40,6 +40,8 @@ type Conn struct {
 	writeMutex sync.Mutex
 	socket     *websocket.Conn
 	id         string
+	once       *sync.Once
+	closeErr   error
 }
 
 // ID returns the remote ID assigned to this connection
@@ -189,7 +191,11 @@ func (conn *Conn) onOpen(packet Packet) error {
 
 // Close closes the underlying transport
 func (conn *Conn) Close() error {
-	return conn.socket.Close()
+	conn.once.Do(func() {
+		conn.closeErr = conn.socket.Close()
+	})
+
+	return conn.closeErr
 }
 
 // DialContext creates a Conn to the Engine.IO server located at address
@@ -208,6 +214,7 @@ func DialContext(ctx context.Context, address string) (*Conn, error) {
 
 	conn := &Conn{
 		socket: socket,
+		once:   &sync.Once{},
 	}
 
 	return conn, nil
