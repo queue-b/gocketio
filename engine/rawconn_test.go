@@ -50,7 +50,7 @@ var packetSequenceOpen = []Packet{
 }
 
 func TestID(t *testing.T) {
-	c := Conn{}
+	c := RawConn{}
 
 	id := "asdfjkl"
 	c.setID(id)

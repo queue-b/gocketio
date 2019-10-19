@@ -8,10 +8,19 @@ import (
 	"time"
 )
 
+type Conn interface {
+	ID() string
+	SupportsBinary() bool
+	Read() <-chan Packet
+	Write() chan<- Packet
+	Close() error
+	KeepAliveContext(context.Context)
+}
+
 // KeepAliveConn wraps a Conn and handles the Ping/Pong process
 type KeepAliveConn struct {
 	sync.RWMutex
-	conn     *Conn
+	conn     *RawConn
 	read     chan Packet
 	write    chan Packet
 	ping     chan Packet
@@ -19,19 +28,21 @@ type KeepAliveConn struct {
 	open     chan Packet
 	cancel   context.CancelFunc
 	once     *sync.Once
+	openOnce *sync.Once
 	closeErr error
 }
 
 // NewKeepAliveConn returns a new instance of KeepAliveConn
-func NewKeepAliveConn(conn *Conn, readBufferSize int, outgoing chan Packet) *KeepAliveConn {
+func NewKeepAliveConn(conn *RawConn, readBufferSize int, outgoing chan Packet) *KeepAliveConn {
 	return &KeepAliveConn{
-		conn:  conn,
-		read:  make(chan Packet, readBufferSize),
-		write: outgoing,
-		ping:  make(chan Packet),
-		pong:  make(chan struct{}),
-		open:  make(chan Packet),
-		once:  &sync.Once{},
+		conn:     conn,
+		read:     make(chan Packet, readBufferSize),
+		write:    outgoing,
+		ping:     make(chan Packet),
+		pong:     make(chan struct{}),
+		open:     make(chan Packet),
+		openOnce: &sync.Once{},
+		once:     &sync.Once{},
 	}
 }
 
@@ -188,11 +199,13 @@ func (k *KeepAliveConn) readContext(ctx context.Context) {
 			switch packet.GetType() {
 			case Open:
 				k.open <- packet
+				k.openOnce.Do(func() { k.read <- packet })
 			case Pong:
 				k.pong <- struct{}{}
+			default:
+				k.read <- packet
 			}
 
-			k.read <- packet
 		}
 	}
 }

@@ -23,18 +23,13 @@ type openData struct {
 	PingTimeout  int64
 }
 
-type Transport interface {
-	ID() string
-	SupportsBinary() bool
-}
-
 type ConnConfig struct {
 	ConnectTimeout        time.Duration
 	OutgoingChannelLength int32
 }
 
-// Conn is a connection to an Engine.IO connection
-type Conn struct {
+// RawConn is a connection to an Engine.IO connection
+type RawConn struct {
 	sync.RWMutex
 	readMutex  sync.Mutex
 	writeMutex sync.Mutex
@@ -45,7 +40,7 @@ type Conn struct {
 }
 
 // ID returns the remote ID assigned to this connection
-func (conn *Conn) ID() string {
+func (conn *RawConn) ID() string {
 	conn.RLock()
 	defer conn.RUnlock()
 	return conn.id
@@ -53,9 +48,9 @@ func (conn *Conn) ID() string {
 
 // SupportsBinary returns true if the underlying connection supports sending raw binary data (bytes),
 // false otherwise
-func (conn *Conn) SupportsBinary() bool { return true }
+func (conn *RawConn) SupportsBinary() bool { return true }
 
-func (conn *Conn) setID(id string) {
+func (conn *RawConn) setID(id string) {
 	conn.Lock()
 	defer conn.Unlock()
 	conn.id = id
@@ -92,7 +87,7 @@ func fixupAddress(address string) (*url.URL, error) {
 	return parsedAddress, nil
 }
 
-func (conn *Conn) Write(packet Packet) error {
+func (conn *RawConn) Write(packet Packet) error {
 	if packet == nil {
 		return errors.New("Cannot send nil message")
 	}
@@ -115,7 +110,7 @@ func (conn *Conn) Write(packet Packet) error {
 	return err
 }
 
-func (conn *Conn) Read() (Packet, error) {
+func (conn *RawConn) Read() (Packet, error) {
 	conn.readMutex.Lock()
 	t, message, err := conn.socket.ReadMessage()
 	conn.readMutex.Unlock()
@@ -173,7 +168,7 @@ func (conn *Conn) Read() (Packet, error) {
 	return nil, nil
 }
 
-func (conn *Conn) onOpen(packet Packet) error {
+func (conn *RawConn) onOpen(packet Packet) error {
 	if packet.GetData() == nil {
 		return errors.New("Invalid open packet")
 	}
@@ -190,7 +185,7 @@ func (conn *Conn) onOpen(packet Packet) error {
 }
 
 // Close closes the underlying transport
-func (conn *Conn) Close() error {
+func (conn *RawConn) Close() error {
 	conn.once.Do(func() {
 		conn.closeErr = conn.socket.Close()
 	})
@@ -198,8 +193,8 @@ func (conn *Conn) Close() error {
 	return conn.closeErr
 }
 
-// DialContext creates a Conn to the Engine.IO server located at address
-func DialContext(ctx context.Context, address string) (*Conn, error) {
+// DialContext creates a RawConn to the Engine.IO server located at address
+func DialContext(ctx context.Context, address string) (*RawConn, error) {
 	parsedAddress, err := fixupAddress(address)
 
 	if err != nil {
@@ -212,7 +207,7 @@ func DialContext(ctx context.Context, address string) (*Conn, error) {
 		return nil, err
 	}
 
-	conn := &Conn{
+	conn := &RawConn{
 		socket: socket,
 		once:   &sync.Once{},
 	}
