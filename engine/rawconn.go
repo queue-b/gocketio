@@ -14,6 +14,22 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type PacketConnState uint32
+
+const (
+	Connected PacketConnState = iota
+	Disconnected
+)
+
+type PacketConn interface {
+	ID() string
+	SupportsBinary() bool
+	Read() (Packet, error)
+	Write(Packet) error
+	Close() error
+	State() PacketConnState
+}
+
 // ErrDisconnected is returned when the transport is closed
 var ErrDisconnected = errors.New("Transport disconnected")
 
@@ -37,6 +53,13 @@ type RawConn struct {
 	id         string
 	once       *sync.Once
 	closeErr   error
+	state      PacketConnState
+}
+
+func (conn *RawConn) State() PacketConnState {
+	conn.RLock()
+	defer conn.RUnlock()
+	return conn.state
 }
 
 // ID returns the remote ID assigned to this connection
@@ -187,7 +210,10 @@ func (conn *RawConn) onOpen(packet Packet) error {
 // Close closes the underlying transport
 func (conn *RawConn) Close() error {
 	conn.once.Do(func() {
+		conn.Lock()
+		defer conn.Unlock()
 		conn.closeErr = conn.socket.Close()
+		conn.state = Disconnected
 	})
 
 	return conn.closeErr
@@ -210,6 +236,7 @@ func DialContext(ctx context.Context, address string) (*RawConn, error) {
 	conn := &RawConn{
 		socket: socket,
 		once:   &sync.Once{},
+		state:  Connected,
 	}
 
 	return conn, nil

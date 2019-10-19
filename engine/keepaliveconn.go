@@ -3,8 +3,6 @@ package engine
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -46,7 +44,7 @@ type Conn interface {
 // KeepAliveConn wraps a Conn and handles the Ping/Pong process
 type KeepAliveConn struct {
 	sync.RWMutex
-	conn     *RawConn
+	conn     PacketConn
 	read     chan Packet
 	write    chan Packet
 	ping     chan Packet
@@ -60,7 +58,7 @@ type KeepAliveConn struct {
 }
 
 // NewKeepAliveConn returns a new instance of KeepAliveConn
-func NewKeepAliveConn(conn *RawConn, readBufferSize int, outgoing chan Packet) *KeepAliveConn {
+func NewKeepAliveConn(conn PacketConn, readBufferSize int, outgoing chan Packet) *KeepAliveConn {
 	return &KeepAliveConn{
 		conn:     conn,
 		read:     make(chan Packet, readBufferSize),
@@ -73,27 +71,17 @@ func NewKeepAliveConn(conn *RawConn, readBufferSize int, outgoing chan Packet) *
 	}
 }
 
+func (k *KeepAliveConn) State() PacketConnState {
+	return k.conn.State()
+}
+
 // ID returns the ID of the wrapped Conn
 func (k *KeepAliveConn) ID() string {
-	k.RLock()
-	defer k.RUnlock()
-
-	if k.conn == nil {
-		return ""
-	}
-
 	return k.conn.ID()
 }
 
 // SupportsBinary returns whether the wrapped Conn supports binary
 func (k *KeepAliveConn) SupportsBinary() bool {
-	k.RLock()
-	defer k.RUnlock()
-
-	if k.conn == nil {
-		return false
-	}
-
 	return k.conn.SupportsBinary()
 }
 
@@ -117,7 +105,6 @@ func (k *KeepAliveConn) Close() error {
 
 		close(k.read)
 		k.closeErr = k.conn.Close()
-		k.conn = nil
 		k.cancel = nil
 		k.isClosed = true
 	})
@@ -168,9 +155,6 @@ func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
 	keepAliveInterval := time.Duration(data.PingInterval) * time.Millisecond
 	keepAliveTimeout := time.Duration(data.PingTimeout) * time.Millisecond
 
-	fmt.Println("Interval", keepAliveInterval)
-	fmt.Println("Timeout", keepAliveTimeout)
-
 	// Send an initial ping
 	select {
 	case <-ctx.Done():
@@ -215,22 +199,16 @@ func (k *KeepAliveConn) readContext(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			close(k.read)
 			return
 		default:
-			k.RLock()
-			conn := k.conn
-			k.RUnlock()
+			packet, err := k.conn.Read()
 
-			if conn == nil {
+			if err != nil {
 				k.Close()
 				return
 			}
 
-			packet, err := conn.Read()
-
-			if err != nil {
-				k.Close()
+			if packet == nil {
 				return
 			}
 
@@ -249,15 +227,7 @@ func (k *KeepAliveConn) readContext(ctx context.Context) {
 }
 
 func (k *KeepAliveConn) writeTo(packet Packet) error {
-	k.RLock()
-	conn := k.conn
-	k.RUnlock()
-
-	if conn == nil {
-		return errors.New("No connection")
-	}
-
-	return conn.Write(packet)
+	return k.conn.Write(packet)
 }
 
 func (k *KeepAliveConn) writeContext(ctx context.Context) {
