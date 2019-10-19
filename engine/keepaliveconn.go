@@ -53,6 +53,7 @@ type KeepAliveConn struct {
 	pong     chan struct{}
 	open     chan Packet
 	cancel   context.CancelFunc
+	isClosed bool
 	once     *sync.Once
 	openOnce *sync.Once
 	closeErr error
@@ -107,10 +108,18 @@ func (k *KeepAliveConn) Read() <-chan Packet {
 // Close stops the Ping/Pong process and closes the wrapped Conn
 func (k *KeepAliveConn) Close() error {
 	k.once.Do(func() {
-		k.cancel()
+		k.Lock()
+		defer k.Unlock()
+
+		if k.cancel != nil {
+			k.cancel()
+		}
+
+		close(k.read)
 		k.closeErr = k.conn.Close()
 		k.conn = nil
 		k.cancel = nil
+		k.isClosed = true
 	})
 
 	return k.closeErr
@@ -121,17 +130,17 @@ func (k *KeepAliveConn) KeepAliveContext(ctx context.Context) {
 	k.Lock()
 	defer k.Unlock()
 
-	if k.cancel != nil {
+	if k.cancel != nil || k.isClosed {
 		return
 	}
 
 	derivedCtx, cancel := context.WithCancel(ctx)
+	k.cancel = cancel
 
 	go k.readContext(derivedCtx)
 	go k.writeContext(derivedCtx)
 	go k.keepAliveContext(derivedCtx)
 
-	k.cancel = cancel
 }
 
 func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
