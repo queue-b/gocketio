@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/queue-b/gocketio/engine"
 
@@ -145,7 +146,7 @@ func TestManagerNamespaceWithNewSocket(t *testing.T) {
 	}
 }
 
-func TestConnectContext(t *testing.T) {
+func TestDisconnect(t *testing.T) {
 	mux := http.NewServeMux()
 
 	srv, address := engine.CreateTestSocketIOServer(mux)
@@ -168,7 +169,6 @@ func TestConnectContext(t *testing.T) {
 	m := &Manager{
 		opts:            DefaultManagerConfig(),
 		outgoingPackets: outgoing,
-		conn:            engine.NewMockConn("test", true, make(chan engine.Packet, 1), outgoing, nil),
 		address:         addr,
 		socketCtx:       ctx,
 		sockets:         make(map[string]*Socket),
@@ -177,10 +177,71 @@ func TestConnectContext(t *testing.T) {
 
 	err = m.connectContext(ctx)
 
+	if err != nil {
+		t.Fatalf("ConnectContext failed with %v\n", err)
+	}
+
+	time.Sleep(500 * time.Millisecond)
+
+	m.conn.Close()
+
 	cancel()
+}
+
+func TestConnectContext(t *testing.T) {
+	mux := http.NewServeMux()
+
+	srv, address := engine.CreateTestSocketIOServer(mux)
+
+	mux.HandleFunc("/socket.io/", engine.CreateOpenPingPongHandler())
+
+	go srv.Start()
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addr, err := url.Parse(address)
+
+	if err != nil {
+		t.Errorf("Invalid address %v\n", err)
+	}
+
+	outgoing := make(chan engine.Packet, 1)
+
+	m := &Manager{
+		opts:            DefaultManagerConfig(),
+		outgoingPackets: outgoing,
+		address:         addr,
+		socketCtx:       ctx,
+		sockets:         make(map[string]*Socket),
+		fromSockets:     make(chan socket.Packet, 1),
+	}
+
+	err = m.connectContext(ctx)
 
 	if err != nil {
 		t.Fatalf("ConnectContext failed with %v\n", err)
 	}
 
+}
+
+func TestDialContext(t *testing.T) {
+	mux := http.NewServeMux()
+
+	srv, address := engine.CreateTestSocketIOServer(mux)
+
+	mux.HandleFunc("/socket.io/", engine.CreateOpenPingPongHandler())
+
+	go srv.Start()
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err := DialContext(ctx, address, DefaultManagerConfig())
+
+	if err != nil {
+		t.Fatalf("DialContext failed with %v\n", err)
+	}
 }

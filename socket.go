@@ -109,6 +109,29 @@ func isBlacklisted(event string) bool {
 	}
 }
 
+func newSocket(namespace, id string, outgoing chan socket.Packet) *Socket {
+	nsSocket := &Socket{}
+	nsSocket.outgoingPackets = outgoing
+	nsSocket.namespace = namespace
+	nsSocket.incomingPackets = make(chan socket.Packet)
+
+	nsSocket.events = sync.Map{}
+	nsSocket.acks = sync.Map{}
+	nsSocket.id = fmt.Sprintf("%v#%v", namespace, id)
+
+	return nsSocket
+}
+
+func (s *Socket) onOpen() {
+	if !socket.IsRootNamespace(s.namespace) {
+		connectPacket := socket.Packet{}
+		connectPacket.Namespace = s.namespace
+		connectPacket.Type = socket.Connect
+
+		s.outgoingPackets <- connectPacket
+	}
+}
+
 // On adds the event handler for the event
 func (s *Socket) On(event string, handler interface{}) error {
 	err := isFunction(handler)

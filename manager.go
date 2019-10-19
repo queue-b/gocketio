@@ -89,14 +89,7 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 		return nsSocket, nil
 	}
 
-	nsSocket := &Socket{}
-	nsSocket.outgoingPackets = m.fromSockets
-	nsSocket.namespace = namespace
-	nsSocket.incomingPackets = make(chan socket.Packet)
-
-	nsSocket.events = sync.Map{}
-	nsSocket.acks = sync.Map{}
-	nsSocket.id = fmt.Sprintf("%v#%v", namespace, m.conn.ID())
+	nsSocket := newSocket(namespace, m.conn.ID(), m.fromSockets)
 
 	go receiveFromManager(m.socketCtx, nsSocket, nsSocket.incomingPackets)
 
@@ -117,14 +110,8 @@ func (m *Manager) onReconnect() {
 	m.Lock()
 	defer m.Unlock()
 
-	for namespace := range m.sockets {
-		if !socket.IsRootNamespace(namespace) {
-			connectPacket := socket.Packet{}
-			connectPacket.Namespace = namespace
-			connectPacket.Type = socket.Connect
-
-			m.fromSockets <- connectPacket
-		}
+	for _, v := range m.sockets {
+		v.onOpen()
 	}
 }
 
@@ -141,10 +128,14 @@ func (m *Manager) connectContext(ctx context.Context) error {
 		return err
 	}
 
+	m.fromSockets = make(chan socket.Packet)
+	m.sockets = make(map[string]*Socket)
+	m.outgoingPackets = make(chan engine.Packet, 1)
 	m.conn = engine.NewKeepAliveConn(conn, 100, m.outgoingPackets)
 	m.socketCtx = ctx
 	m.cancel = cancel
 
+	go m.conn.KeepAliveContext(managerCtx)
 	go m.readFromEngineContext(managerCtx)
 	go m.writeToEngineContext(managerCtx)
 
@@ -298,8 +289,6 @@ func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Mana
 		return nil, err
 	}
 
-	manager.fromSockets = make(chan socket.Packet)
-	manager.sockets = make(map[string]*Socket)
 	manager.address = parsedAddress
 	manager.opts = cfg
 
