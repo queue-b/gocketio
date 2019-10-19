@@ -2,12 +2,10 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
 	"time"
 
@@ -32,6 +30,23 @@ func createHandler(handler func(c *websocket.Conn)) http.HandlerFunc {
 
 		handler(c)
 	}
+}
+
+func quickEncode(p Packet) []byte {
+	bytes, _ := p.Encode(true)
+	return bytes
+}
+
+var normalOpenData = `{"sid":"abcd", "pingInterval": 1000, "pingTimeout": 250}`
+var stringData = "hello 亜"
+
+var packetSequenceNormal = []Packet{
+	&StringPacket{Type: Message, Data: &stringData},
+}
+
+var packetSequenceOpen = []Packet{
+	&StringPacket{Type: Open, Data: &normalOpenData},
+	&StringPacket{Type: Pong},
 }
 
 func TestID(t *testing.T) {
@@ -110,9 +125,6 @@ func TestConnectionWrite(t *testing.T) {
 
 	srv, address := createServer(mux)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
 		mt, message, err := c.ReadMessage()
 		if err != nil {
@@ -129,7 +141,9 @@ func TestConnectionWrite(t *testing.T) {
 			t.Fatalf("Expected '4the world', got %v", msgStr)
 		}
 
-		wg.Done()
+		forever := make(chan struct{})
+
+		<-forever
 	}))
 
 	go srv.Start()
@@ -159,8 +173,6 @@ func TestConnectionWrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unable to write %v\n", err)
 	}
-
-	wg.Wait()
 }
 
 func TestConnectionRead(t *testing.T) {
@@ -169,22 +181,13 @@ func TestConnectionRead(t *testing.T) {
 	srv, address := createServer(mux)
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		for {
-			data := "hello 亜"
-
-			packet := StringPacket{
-				Type: Message,
-				Data: &data,
-			}
-
-			message, err := packet.Encode(true)
-
-			err = c.WriteMessage(websocket.TextMessage, message)
-			if err != nil {
-				log.Println("write:", err)
-				break
-			}
+		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceNormal[0]))
+		if err != nil {
+			log.Println("write:", err)
 		}
+
+		forever := make(chan struct{})
+		<-forever
 	}))
 
 	go srv.Start()
@@ -248,22 +251,7 @@ func TestConnectionReadOpenMessage(t *testing.T) {
 	srv, address := createServer(mux)
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		openContent := openData{
-			SID:          "15",
-			PingInterval: 1000,
-			PingTimeout:  250,
-		}
-
-		m, err := json.Marshal(&openContent)
-		ms := string(m)
-		packet := StringPacket{
-			Type: Open,
-			Data: &ms,
-		}
-
-		p, _ := packet.Encode(true)
-
-		err = c.WriteMessage(websocket.TextMessage, p)
+		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}

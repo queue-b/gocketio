@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,28 +17,10 @@ func TestKeepAlive(t *testing.T) {
 	srv, address := createServer(mux)
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		openContent := openData{
-			SID:          "15",
-			PingInterval: 1000,
-			PingTimeout:  250,
-		}
-
-		m, err := json.Marshal(&openContent)
-		ms := string(m)
-		packet := StringPacket{
-			Type: Open,
-			Data: &ms,
-		}
-
-		p, _ := packet.Encode(true)
-
-		fmt.Println("Writing open")
-		err = c.WriteMessage(websocket.TextMessage, p)
+		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}
-
-		fmt.Println("Reading ping")
 
 		mt, message, err := c.ReadMessage()
 		if err != nil {
@@ -56,13 +37,7 @@ func TestKeepAlive(t *testing.T) {
 			t.Fatalf("Expected ping")
 		}
 
-		fmt.Println("Writing pong")
-
-		pong := &StringPacket{Type: Pong}
-
-		p, _ = pong.Encode(true)
-
-		err = c.WriteMessage(websocket.TextMessage, p)
+		err = c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}
@@ -97,22 +72,7 @@ func TestKeepAliveAccessors(t *testing.T) {
 	srv, address := createServer(mux)
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		openContent := openData{
-			SID:          "15",
-			PingInterval: 10000,
-			PingTimeout:  2500,
-		}
-
-		m, err := json.Marshal(&openContent)
-		ms := string(m)
-		packet := StringPacket{
-			Type: Open,
-			Data: &ms,
-		}
-
-		p, _ := packet.Encode(true)
-
-		err = c.WriteMessage(websocket.TextMessage, p)
+		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}
@@ -175,22 +135,7 @@ func TestKeepAliveTimeout(t *testing.T) {
 	srv, address := createServer(mux)
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		openContent := openData{
-			SID:          "15",
-			PingInterval: 1000,
-			PingTimeout:  250,
-		}
-
-		m, err := json.Marshal(&openContent)
-		ms := string(m)
-		packet := StringPacket{
-			Type: Open,
-			Data: &ms,
-		}
-
-		p, _ := packet.Encode(true)
-
-		err = c.WriteMessage(websocket.TextMessage, p)
+		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}
