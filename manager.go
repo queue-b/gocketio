@@ -38,60 +38,14 @@ func DefaultManagerConfig() *ManagerConfig {
 // Manager manages connections to the same server with different namespaces
 type Manager struct {
 	sync.Mutex
-	address     *url.URL
-	sockets     map[string]*Socket
-	conn        engine.Transport
-	fromSockets chan socket.Packet
-	socketCtx   context.Context
-	cancel      context.CancelFunc
-	opts        *ManagerConfig
-}
-
-func handleDisconnect(manager *Manager, reconnectFunction func() error, disconnects <-chan struct{}) {
-	for {
-		select {
-		case <-disconnects:
-			manager.cancel()
-			manager.conn = nil
-			err := backoff.Retry(reconnectFunction, backoff.WithContext(manager.opts.BackOff, manager.socketCtx))
-
-			if err != nil {
-				fmt.Println(err)
-				return
-			}
-
-			manager.onReconnect()
-			return
-		}
-	}
-}
-
-func receiveFromEngine(ctx context.Context, manager *Manager, inputPackets chan engine.Packet) {
-	d := socket.BinaryDecoder{}
-
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("ctx.Done, killing manager.receiveFromEngine")
-			return
-		case packet, ok := <-inputPackets:
-			if !ok {
-				fmt.Println("Invalid packet read, killing manager.receiveFromEngine")
-				return
-			}
-
-			message, err := d.Decode(packet)
-
-			if err != nil && err != socket.ErrWaitingForMorePackets {
-				fmt.Println(err)
-				continue
-			}
-
-			fmt.Printf("Received packet %v\n", message)
-
-			go manager.forwardMessage(ctx, message)
-		}
-	}
+	address         *url.URL
+	sockets         map[string]*Socket
+	conn            engine.Conn
+	outgoingPackets chan engine.Packet
+	fromSockets     chan socket.Packet
+	socketCtx       context.Context
+	cancel          context.CancelFunc
+	opts            *ManagerConfig
 }
 
 func (m *Manager) forwardMessage(ctx context.Context, message socket.Packet) {
@@ -118,61 +72,6 @@ func (m *Manager) forwardMessage(ctx context.Context, message socket.Packet) {
 		}
 	} else {
 		m.Unlock()
-	}
-}
-
-func sendToEngine(ctx context.Context, manager *Manager, outputPackets chan socket.Packet, enginePackets chan engine.Packet) {
-	for {
-		select {
-		case <-ctx.Done():
-			// We're the writer, so it's our job to close the channel
-			fmt.Println("ctx.Done, killing manager.sendToEngine")
-			close(enginePackets)
-			return
-		case packet, ok := <-outputPackets:
-			if !ok {
-				fmt.Println("Invalid read, killing manager.sendToEngine")
-				return
-			}
-
-			encodedData, err := packet.Encode(manager.conn.SupportsBinary())
-
-			if err != nil || len(encodedData) == 0 {
-				fmt.Printf("Error encoding packet %v\n", err)
-				continue
-			}
-
-			// The first encoded element will always be a string,
-			// even if the packet has binary
-			first := string(encodedData[0])
-
-			fmt.Printf("Sending %v to engine\n", first)
-
-			p := engine.StringPacket{}
-			p.Type = engine.Message
-			p.Data = &first
-
-			select {
-			case <-ctx.Done():
-				return
-			case enginePackets <- &p:
-			}
-
-			// Packet has attachments
-			if len(encodedData) > 1 {
-				for _, v := range encodedData[1:] {
-					b := engine.BinaryPacket{}
-					b.Type = engine.Message
-					b.Data = v
-
-					select {
-					case <-ctx.Done():
-						return
-					case enginePackets <- &b:
-					}
-				}
-			}
-		}
 	}
 }
 
@@ -229,23 +128,25 @@ func (m *Manager) onReconnect() {
 	}
 }
 
-func connectContext(ctx context.Context, m *Manager) error {
+func (m *Manager) connectContext(ctx context.Context) error {
 	managerCtx, cancel := context.WithCancel(ctx)
 
-	conn, err := engine.DialContext(ctx, m.address.String(), m.opts.ConnectionTimeout)
+	deadlineCtx, deadlineCancel := context.WithTimeout(ctx, m.opts.ConnectionTimeout)
+	defer deadlineCancel()
+
+	conn, err := engine.DialContext(deadlineCtx, m.address.String())
 
 	if err != nil {
 		cancel()
 		return err
 	}
 
-	m.conn = conn
+	m.conn = engine.NewKeepAliveConn(conn, 100, m.outgoingPackets)
 	m.socketCtx = ctx
 	m.cancel = cancel
 
-	go receiveFromEngine(managerCtx, m, conn.Receive)
-	go sendToEngine(managerCtx, m, m.fromSockets, conn.Send)
-	go handleDisconnect(m, reconnect(ctx, m), conn.Disconnected())
+	go m.readFromEngineContext(managerCtx)
+	go m.writeToEngineContext(managerCtx)
 
 	_, err = m.Namespace("/")
 
@@ -257,9 +158,23 @@ func connectContext(ctx context.Context, m *Manager) error {
 	return nil
 }
 
-func reconnect(ctx context.Context, m *Manager) func() error {
+func (m *Manager) reconnectContext(ctx context.Context) {
+	m.cancel()
+	m.conn = nil
+	err := backoff.Retry(m.startConnectionOperation(ctx), backoff.WithContext(m.opts.BackOff, ctx))
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	m.onReconnect()
+	return
+}
+
+func (m *Manager) startConnectionOperation(ctx context.Context) backoff.Operation {
 	return func() error {
-		return connectContext(ctx, m)
+		return m.connectContext(ctx)
 	}
 }
 
@@ -293,6 +208,82 @@ func fixupAddress(address string, additionaQueryArgs map[string]string) (*url.UR
 	return parsedAddress, nil
 }
 
+func (m *Manager) readFromEngineContext(ctx context.Context) {
+	d := socket.BinaryDecoder{}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case packet, ok := <-m.conn.Read():
+			if !ok {
+				go m.reconnectContext(m.socketCtx)
+				return
+			}
+
+			message, err := d.Decode(packet)
+
+			if err != nil && err != socket.ErrWaitingForMorePackets {
+				fmt.Println(err)
+				continue
+			}
+
+			go m.forwardMessage(ctx, message)
+		}
+	}
+}
+
+func (m *Manager) writeToEngineContext(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			// We're the writer, so it's our job to close the channel
+			close(m.outgoingPackets)
+			return
+		case packet, ok := <-m.fromSockets:
+			if !ok {
+				close(m.outgoingPackets)
+				return
+			}
+
+			encodedData, err := packet.Encode(m.conn.SupportsBinary())
+
+			if err != nil || len(encodedData) == 0 {
+				continue
+			}
+
+			// The first encoded element will always be a string,
+			// even if the packet has binary
+			first := string(encodedData[0])
+
+			p := engine.StringPacket{}
+			p.Type = engine.Message
+			p.Data = &first
+
+			select {
+			case <-ctx.Done():
+				return
+			case m.outgoingPackets <- &p:
+			}
+
+			// Packet has attachments
+			if len(encodedData) > 1 {
+				for _, v := range encodedData[1:] {
+					b := engine.BinaryPacket{}
+					b.Type = engine.Message
+					b.Data = v
+
+					select {
+					case <-ctx.Done():
+						return
+					case m.outgoingPackets <- &b:
+					}
+				}
+			}
+		}
+	}
+}
+
 // DialContext attempts to connect to the Socket.IO server at address
 func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Manager, error) {
 	if cfg == nil {
@@ -312,7 +303,7 @@ func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Mana
 	manager.address = parsedAddress
 	manager.opts = cfg
 
-	err = backoff.Retry(reconnect(ctx, manager), backoff.WithContext(cfg.BackOff, ctx))
+	err = backoff.Retry(manager.startConnectionOperation(ctx), backoff.WithContext(cfg.BackOff, ctx))
 
 	return manager, err
 }

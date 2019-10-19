@@ -2,12 +2,10 @@ package gocketio
 
 import (
 	"context"
-	"errors"
+	"net/http"
 	"net/url"
 	"sync"
 	"testing"
-
-	"github.com/cenkalti/backoff/v3"
 
 	"github.com/queue-b/gocketio/engine"
 
@@ -20,26 +18,27 @@ func (m *mockConn) ID() string           { return "hello" }
 func (m *mockConn) SupportsBinary() bool { return true }
 
 func TestSendToEngine(t *testing.T) {
-	s := &Socket{}
-	s.events = sync.Map{}
-	s.outgoingPackets = make(chan socket.Packet)
-	s.currentState = Connected
-
 	m := &Manager{}
-	m.conn = &mockConn{}
+	m.outgoingPackets = make(chan engine.Packet, 1)
+	m.conn = engine.NewMockConn("test", true, make(chan engine.Packet), m.outgoingPackets, nil)
 	m.sockets = make(map[string]*Socket)
 
-	enginePackets := make(chan engine.Packet)
+	s := &Socket{}
+	s.events = sync.Map{}
+	m.fromSockets = make(chan socket.Packet, 1)
+
+	s.outgoingPackets = m.fromSockets
+	s.currentState = Connected
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	defer cancel()
 
-	go sendToEngine(ctx, m, s.outgoingPackets, enginePackets)
+	go m.writeToEngineContext(ctx)
 
 	s.Emit("fancy", "pants")
 
-	p := <-enginePackets
+	p := <-m.outgoingPackets
 
 	// TODO: Additional tests to make sure that the packet was encoded correctly
 	if p.GetType() != engine.Message {
@@ -53,18 +52,18 @@ func TestReceiveFromEngine(t *testing.T) {
 	s.incomingPackets = make(chan socket.Packet)
 	s.currentState = Connected
 
+	enginePackets := make(chan engine.Packet, 1)
+
 	m := &Manager{}
-	m.conn = &mockConn{}
+	m.conn = engine.NewMockConn("test", true, enginePackets, make(chan engine.Packet), nil)
 	m.sockets = make(map[string]*Socket)
 	m.sockets["/"] = s
-
-	enginePackets := make(chan engine.Packet)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	defer cancel()
 
-	go receiveFromEngine(ctx, m, enginePackets)
+	go m.readFromEngineContext(ctx)
 
 	p := socket.Packet{}
 	p.Type = socket.Event
@@ -93,60 +92,6 @@ func TestReceiveFromEngine(t *testing.T) {
 	}
 }
 
-func TestHandleDisconnect(t *testing.T) {
-	disconnects := make(chan struct{})
-
-	invoked := make(chan struct{}, 1)
-
-	reconnect := func() error {
-		invoked <- struct{}{}
-		return nil
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	manager := &Manager{}
-	manager.conn = &mockConn{}
-	manager.cancel = cancel
-	manager.socketCtx = ctx
-	manager.opts = DefaultManagerConfig()
-
-	go handleDisconnect(manager, reconnect, disconnects)
-
-	disconnects <- struct{}{}
-
-	if len(invoked) != 1 {
-		t.Fatal("Expected reconnect function to be invoked at least 1 time")
-	}
-
-}
-
-func TestHandleDisconnectReconnectError(t *testing.T) {
-	disconnects := make(chan struct{})
-
-	invoked := make(chan struct{}, 1)
-
-	reconnect := func() error {
-		return backoff.Permanent(errors.New("Real bad stuff"))
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	manager := &Manager{}
-	manager.conn = &mockConn{}
-	manager.cancel = cancel
-	manager.socketCtx = ctx
-	manager.opts = DefaultManagerConfig()
-
-	go handleDisconnect(manager, reconnect, disconnects)
-
-	disconnects <- struct{}{}
-
-	if len(invoked) != 0 {
-		t.Fatal("Expected reconnect function to be fail")
-	}
-}
-
 func TestManagerNamespaceWithExistingSocket(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -154,7 +99,7 @@ func TestManagerNamespaceWithExistingSocket(t *testing.T) {
 		sockets:   make(map[string]*Socket),
 		cancel:    cancel,
 		socketCtx: ctx,
-		conn:      &mockConn{},
+		conn:      engine.NewMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
 	}
 
 	s := &Socket{}
@@ -178,7 +123,7 @@ func TestManagerNamespaceWithNewSocket(t *testing.T) {
 	fromSockets := make(chan socket.Packet, 1)
 
 	m := &Manager{
-		conn:        &mockConn{},
+		conn:        engine.NewMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
 		sockets:     make(map[string]*Socket),
 		cancel:      cancel,
 		socketCtx:   ctx,
@@ -201,22 +146,36 @@ func TestManagerNamespaceWithNewSocket(t *testing.T) {
 }
 
 func TestConnectContext(t *testing.T) {
+	mux := http.NewServeMux()
+
+	srv, address := engine.CreateTestSocketIOServer(mux)
+
+	mux.HandleFunc("/socket.io/", engine.CreateOpenPingPongHandler())
+
+	go srv.Start()
+	defer srv.Close()
+
 	ctx, cancel := context.WithCancel(context.Background())
 
-	addr, err := url.Parse("http://test.com")
+	addr, err := url.Parse(address)
 
 	if err != nil {
 		t.Errorf("Invalid address %v\n", err)
 	}
 
+	outgoing := make(chan engine.Packet, 1)
+
 	m := &Manager{
-		conn:      &mockConn{},
-		address:   addr,
-		socketCtx: ctx,
-		sockets:   make(map[string]*Socket),
+		opts:            DefaultManagerConfig(),
+		outgoingPackets: outgoing,
+		conn:            engine.NewMockConn("test", true, make(chan engine.Packet, 1), outgoing, nil),
+		address:         addr,
+		socketCtx:       ctx,
+		sockets:         make(map[string]*Socket),
+		fromSockets:     make(chan socket.Packet, 1),
 	}
 
-	err = connectContext(ctx, m)
+	err = m.connectContext(ctx)
 
 	cancel()
 
