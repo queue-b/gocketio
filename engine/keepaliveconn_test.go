@@ -14,37 +14,9 @@ import (
 func TestKeepAlive(t *testing.T) {
 	mux := http.NewServeMux()
 
-	srv, address := createServer(mux)
+	srv, address := CreateTestSocketIOServer(mux)
 
-	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceTimeout[0]))
-		if err != nil {
-			log.Println("write:", err)
-		}
-
-		mt, message, err := c.ReadMessage()
-		if err != nil {
-			t.Fatalf("Unable to read %v\n", err)
-		}
-
-		if mt != websocket.TextMessage {
-			t.Fatal("Expected text message")
-		}
-
-		msgStr := string(message)
-
-		if msgStr != fmt.Sprintf("%v", Ping) {
-			t.Fatalf("Expected ping")
-		}
-
-		err = c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
-		if err != nil {
-			log.Println("write:", err)
-		}
-
-		forever := make(chan struct{})
-		<-forever
-	}))
+	mux.HandleFunc("/socket.io/", CreateOpenPingPongHandler())
 
 	go srv.Start()
 	defer srv.Close()
@@ -69,10 +41,10 @@ func TestKeepAlive(t *testing.T) {
 func TestKeepAliveAccessors(t *testing.T) {
 	mux := http.NewServeMux()
 
-	srv, address := createServer(mux)
+	srv, address := CreateTestSocketIOServer(mux)
 
-	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceTimeout[0]))
+	mux.HandleFunc("/socket.io/", CreateTestSocketIOHandler(func(c *websocket.Conn) {
+		err := c.WriteMessage(websocket.TextMessage, QuickEncode(packetSequenceTimeout[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}
@@ -132,10 +104,10 @@ func TestKeepAliveAccessors(t *testing.T) {
 func TestKeepAliveTimeout(t *testing.T) {
 	mux := http.NewServeMux()
 
-	srv, address := createServer(mux)
+	srv, address := CreateTestSocketIOServer(mux)
 
-	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
+	mux.HandleFunc("/socket.io/", CreateTestSocketIOHandler(func(c *websocket.Conn) {
+		err := c.WriteMessage(websocket.TextMessage, QuickEncode(packetSequenceOpen[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}

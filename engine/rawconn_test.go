@@ -2,58 +2,13 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
-
-func createServer(mux *http.ServeMux) (*httptest.Server, string) {
-	server := httptest.NewUnstartedServer(mux)
-
-	return server, fmt.Sprintf("http://%v/socket.io/", server.Listener.Addr())
-}
-
-func createHandler(handler func(c *websocket.Conn)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var upgrader = websocket.Upgrader{}
-
-		c, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer c.Close()
-
-		handler(c)
-	}
-}
-
-func quickEncode(p Packet) []byte {
-	bytes, _ := p.Encode(true)
-	return bytes
-}
-
-var normalOpenData = `{"sid":"abcd", "pingInterval": 1000, "pingTimeout": 250}`
-var longOpenData = `{"sid":"abcd", "pingInterval": 10000, "pingTimeout": 5000}`
-
-var stringData = "hello 亜"
-
-var packetSequenceNormal = []Packet{
-	&StringPacket{Type: Message, Data: &stringData},
-}
-
-var packetSequenceOpen = []Packet{
-	&StringPacket{Type: Open, Data: &normalOpenData},
-	&StringPacket{Type: Pong},
-}
-
-var packetSequenceTimeout = []Packet{
-	&StringPacket{Type: Open, Data: &longOpenData},
-}
 
 func TestID(t *testing.T) {
 	c := RawConn{}
@@ -95,9 +50,9 @@ func TestFixupAddress(t *testing.T) {
 func TestDialContext(t *testing.T) {
 	mux := http.NewServeMux()
 
-	srv, address := createServer(mux)
+	srv, address := CreateTestSocketIOServer(mux)
 
-	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
+	mux.HandleFunc("/socket.io/", CreateTestSocketIOHandler(func(c *websocket.Conn) {
 		for {
 			mt, message, err := c.ReadMessage()
 			if err != nil {
@@ -129,9 +84,9 @@ func TestDialContext(t *testing.T) {
 func TestConnectionWrite(t *testing.T) {
 	mux := http.NewServeMux()
 
-	srv, address := createServer(mux)
+	srv, address := CreateTestSocketIOServer(mux)
 
-	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
+	mux.HandleFunc("/socket.io/", CreateTestSocketIOHandler(func(c *websocket.Conn) {
 		mt, message, err := c.ReadMessage()
 		if err != nil {
 			t.Fatalf("Unable to read %v\n", err)
@@ -184,10 +139,10 @@ func TestConnectionWrite(t *testing.T) {
 func TestConnectionRead(t *testing.T) {
 	mux := http.NewServeMux()
 
-	srv, address := createServer(mux)
+	srv, address := CreateTestSocketIOServer(mux)
 
-	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceNormal[0]))
+	mux.HandleFunc("/socket.io/", CreateTestSocketIOHandler(func(c *websocket.Conn) {
+		err := c.WriteMessage(websocket.TextMessage, QuickEncode(packetSequenceNormal[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}
@@ -223,9 +178,9 @@ func TestConnectionRead(t *testing.T) {
 func TestConnectionReadCloseMessage(t *testing.T) {
 	mux := http.NewServeMux()
 
-	srv, address := createServer(mux)
+	srv, address := CreateTestSocketIOServer(mux)
 
-	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
+	mux.HandleFunc("/socket.io/", CreateTestSocketIOHandler(func(c *websocket.Conn) {
 		for {
 			err := c.WriteMessage(websocket.CloseMessage, nil)
 			if err != nil {
@@ -254,10 +209,10 @@ func TestConnectionReadCloseMessage(t *testing.T) {
 func TestConnectionReadOpenMessage(t *testing.T) {
 	mux := http.NewServeMux()
 
-	srv, address := createServer(mux)
+	srv, address := CreateTestSocketIOServer(mux)
 
-	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
+	mux.HandleFunc("/socket.io/", CreateTestSocketIOHandler(func(c *websocket.Conn) {
+		err := c.WriteMessage(websocket.TextMessage, QuickEncode(packetSequenceOpen[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}
