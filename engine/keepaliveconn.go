@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -132,6 +133,9 @@ func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
 	// TODO: Ensure sane values?
 	keepAliveInterval := time.Duration(data.PingInterval) * time.Millisecond
 	keepAliveTimeout := time.Duration(data.PingTimeout) * time.Millisecond
+
+	fmt.Println("Interval", keepAliveInterval)
+	fmt.Println("Timeout", keepAliveTimeout)
 
 	// Send an initial ping
 	select {

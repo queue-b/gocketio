@@ -38,6 +38,8 @@ func quickEncode(p Packet) []byte {
 }
 
 var normalOpenData = `{"sid":"abcd", "pingInterval": 1000, "pingTimeout": 250}`
+var longOpenData = `{"sid":"abcd", "pingInterval": 10000, "pingTimeout": 5000}`
+
 var stringData = "hello 亜"
 
 var packetSequenceNormal = []Packet{
@@ -47,6 +49,10 @@ var packetSequenceNormal = []Packet{
 var packetSequenceOpen = []Packet{
 	&StringPacket{Type: Open, Data: &normalOpenData},
 	&StringPacket{Type: Pong},
+}
+
+var packetSequenceTimeout = []Packet{
+	&StringPacket{Type: Open, Data: &longOpenData},
 }
 
 func TestID(t *testing.T) {

@@ -17,7 +17,7 @@ func TestKeepAlive(t *testing.T) {
 	srv, address := createServer(mux)
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
+		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceTimeout[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}
@@ -62,7 +62,7 @@ func TestKeepAlive(t *testing.T) {
 
 	// Make sure the server isn't closed
 	if keepConn.ID() == "" {
-		log.Fatal("Unexpected empty ID")
+		log.Fatal("[Test Keepalive] Unexpected empty ID")
 	}
 }
 
@@ -72,7 +72,7 @@ func TestKeepAliveAccessors(t *testing.T) {
 	srv, address := createServer(mux)
 
 	mux.HandleFunc("/socket.io/", createHandler(func(c *websocket.Conn) {
-		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceOpen[0]))
+		err := c.WriteMessage(websocket.TextMessage, quickEncode(packetSequenceTimeout[0]))
 		if err != nil {
 			log.Println("write:", err)
 		}
