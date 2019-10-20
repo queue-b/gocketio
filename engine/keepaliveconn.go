@@ -12,6 +12,7 @@ type Conn interface {
 	SupportsBinary() bool
 	Read() <-chan Packet
 	Write() chan<- Packet
+	State() PacketConnState
 	Close() error
 	KeepAliveContext(context.Context)
 }
