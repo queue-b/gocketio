@@ -12,6 +12,7 @@ type Conn interface {
 	SupportsBinary() bool
 	Read() <-chan Packet
 	Write() chan<- Packet
+	Opened() <-chan OpenData
 	State() PacketConnState
 	Close() error
 	KeepAliveContext(context.Context)
@@ -26,6 +27,7 @@ type KeepAliveConn struct {
 	ping     chan Packet
 	pong     chan struct{}
 	open     chan Packet
+	opened   chan OpenData
 	cancel   context.CancelFunc
 	isClosed bool
 	once     *sync.Once
@@ -43,10 +45,15 @@ func NewKeepAliveConn(conn PacketConn, readBufferSize int, outgoing chan Packet)
 		ping:     make(chan Packet),
 		pong:     make(chan struct{}),
 		open:     make(chan Packet),
+		opened:   make(chan OpenData),
 		pongOnce: &sync.Once{},
 		openOnce: &sync.Once{},
 		once:     &sync.Once{},
 	}
+}
+
+func (k *KeepAliveConn) Opened() <-chan OpenData {
+	return k.opened
 }
 
 func (k *KeepAliveConn) State() PacketConnState {
@@ -121,7 +128,7 @@ func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
 		return
 	}
 
-	data := openData{}
+	data := OpenData{}
 	err := json.Unmarshal(openPacket.GetData(), &data)
 
 	if err != nil {
@@ -133,6 +140,7 @@ func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
 	keepAliveInterval := time.Duration(data.PingInterval) * time.Millisecond
 	keepAliveTimeout := time.Duration(data.PingTimeout) * time.Millisecond
 
+	go k.sendOpenDataContext(ctx, data)
 	// Send an initial ping
 	k.sendPingContext(ctx, keepAliveTimeout)
 
@@ -147,6 +155,11 @@ func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
 			k.sendPingContext(ctx, keepAliveTimeout)
 		}
 	}
+}
+
+func (k *KeepAliveConn) sendOpenDataContext(ctx context.Context, data OpenData) {
+	k.opened <- data
+	close(k.opened)
 }
 
 func (k *KeepAliveConn) sendPingContext(ctx context.Context, keepAliveTimeout time.Duration) {

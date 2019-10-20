@@ -33,7 +33,7 @@ type PacketConn interface {
 // ErrDisconnected is returned when the transport is closed
 var ErrDisconnected = errors.New("Transport disconnected")
 
-type openData struct {
+type OpenData struct {
 	SID          string `json:"sid"`
 	PingInterval int64
 	PingTimeout  int64
@@ -196,7 +196,7 @@ func (conn *RawConn) onOpen(packet Packet) error {
 		return errors.New("Invalid open packet")
 	}
 
-	data := openData{}
+	data := OpenData{}
 	err := json.Unmarshal(packet.GetData(), &data)
 
 	if err != nil {
