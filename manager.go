@@ -93,6 +93,8 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 
 	m.sockets[namespace] = nsSocket
 
+	nsSocket.onOpen(m.socketCtx, m.conn.ID())
+
 	return nsSocket, nil
 }
 
