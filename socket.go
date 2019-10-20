@@ -16,10 +16,7 @@ type SocketState int
 
 const (
 	Disconnected SocketState = 1 << iota
-	Connecting
 	Connected
-	Reconnecting
-	Errored
 )
 
 // Javascript Number.MAX_SAFE_INTEGER
@@ -50,21 +47,26 @@ type Socket struct {
 	// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER
 	// Which is currently ((2^53) - 1)
 	// There isn't
-	ackCounter   int64
-	currentState SocketState
-	id           string
-	err          error
+	ackCounter    int64
+	isConnected   bool
+	id            string
+	err           error
+	destroyOnce   sync.Once
+	openOnce      sync.Once
+	cancelReceive context.CancelFunc
 }
 
 // State returns the current state of the socket
-func (s *Socket) State() SocketState {
+func (s *Socket) Connected() bool {
 	s.RLock()
 	defer s.RUnlock()
-	return s.currentState
+	return s.isConnected
 }
 
 // ID returns the ID of the socket
 func (s *Socket) ID() string {
+	s.RLock()
+	defer s.RUnlock()
 	return s.id
 }
 
@@ -122,7 +124,17 @@ func newSocket(namespace, id string, outgoing chan socket.Packet) *Socket {
 	return nsSocket
 }
 
-func (s *Socket) onOpen() {
+func (s *Socket) onOpen(ctx context.Context, id string) {
+	s.Lock()
+	s.id = id
+	s.Unlock()
+
+	s.openOnce.Do(func() {
+		dCtx, cancel := context.WithCancel(ctx)
+		s.cancelReceive = cancel
+		go s.readFromManager(dCtx)
+	})
+
 	if !socket.IsRootNamespace(s.namespace) {
 		connectPacket := socket.Packet{}
 		connectPacket.Namespace = s.namespace
@@ -154,30 +166,10 @@ func (s *Socket) Send(data ...interface{}) error {
 	return s.Emit("message", data...)
 }
 
-func (s *Socket) checkState() error {
-	state := s.State()
-
-	if state == Errored {
-		return s.err
-	}
-
-	if state != Connected {
-		return ErrNotConnected
-	}
-
-	return nil
-}
-
 // Emit raises an event on the server
 func (s *Socket) Emit(event string, data ...interface{}) error {
 	if isBlacklisted(event) {
 		return ErrBlacklistedEvent
-	}
-
-	err := s.checkState()
-
-	if err != nil {
-		return err
 	}
 
 	message := socket.Packet{}
@@ -205,12 +197,6 @@ func (s *Socket) Emit(event string, data ...interface{}) error {
 func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{}) error {
 	if isBlacklisted(event) {
 		return ErrBlacklistedEvent
-	}
-
-	err := s.checkState()
-
-	if err != nil {
-		return err
 	}
 
 	message := socket.Packet{}
@@ -298,44 +284,48 @@ func (s *Socket) sendAck(id int64, data interface{}) {
 	s.outgoingPackets <- p
 }
 
-func (s *Socket) setStateFromPacketType(p socket.PacketType) {
+func (s *Socket) onConnect() {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.currentState == Errored {
-		return
-	}
-
-	if p == socket.Disconnect {
-		s.currentState = Disconnected
-	}
-
-	if p == socket.Connect {
-		s.currentState = Connected
-	}
+	s.isConnected = true
 }
 
-func (s *Socket) setError(err error) {
+func (s *Socket) onDisconnect(server bool) {
 	s.Lock()
 	defer s.Unlock()
+	if server {
+		s.destroyOnce.Do(func() {
+			if s.cancelReceive != nil {
+				s.cancelReceive()
+			}
+		})
+	}
 
-	s.currentState = Errored
-	s.err = err
+	s.isConnected = false
 }
 
-func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan socket.Packet) {
+func (s *Socket) readFromManager(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			fmt.Println("ctx.Done, Killing socket receiveFromManager")
 			return
-		case packet, ok := <-incomingPackets:
+		case packet, ok := <-s.incomingPackets:
 			if !ok {
 				fmt.Println("Invalid read, killing socket receiveFromManager")
 				return
 			}
 
-			s.setStateFromPacketType(packet.Type)
+			if packet.Type == socket.Connect {
+				s.onConnect()
+				continue
+			}
+
+			if packet.Type == socket.Disconnect {
+				s.onDisconnect(true)
+				continue
+			}
 
 			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
 				// Protect against a malformed packet

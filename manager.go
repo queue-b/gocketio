@@ -91,19 +91,26 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 
 	nsSocket := newSocket(namespace, m.conn.ID(), m.fromSockets)
 
-	go receiveFromManager(m.socketCtx, nsSocket, nsSocket.incomingPackets)
-
 	m.sockets[namespace] = nsSocket
 
 	return nsSocket, nil
 }
 
-func (m *Manager) onReconnect() {
+func (m *Manager) onReconnect(id string) {
 	m.Lock()
 	defer m.Unlock()
 
 	for _, v := range m.sockets {
-		v.onOpen()
+		v.onOpen(m.socketCtx, id)
+	}
+}
+
+func (m *Manager) onDisconnect() {
+	m.Lock()
+	defer m.Unlock()
+
+	for _, v := range m.sockets {
+		v.onDisconnect(false)
 	}
 }
 
@@ -113,6 +120,9 @@ func (m *Manager) connectContext(ctx context.Context) error {
 	deadlineCtx, deadlineCancel := context.WithTimeout(ctx, m.opts.ConnectionTimeout)
 	defer deadlineCancel()
 
+	// Notify the sockets that they are disconnected (temporarily)
+	m.onDisconnect()
+
 	conn, err := engine.DialContext(deadlineCtx, m.address.String())
 
 	if err != nil {
@@ -120,16 +130,19 @@ func (m *Manager) connectContext(ctx context.Context) error {
 		return err
 	}
 
-	m.fromSockets = make(chan socket.Packet)
-	m.sockets = make(map[string]*Socket)
-	m.outgoingPackets = make(chan engine.Packet, 1)
+	m.Lock()
 	m.conn = engine.NewKeepAliveConn(conn, 100, m.outgoingPackets)
-	m.socketCtx = ctx
 	m.cancel = cancel
+	m.Unlock()
 
 	go m.conn.KeepAliveContext(managerCtx)
 	go m.readFromEngineContext(managerCtx)
 	go m.writeToEngineContext(managerCtx)
+
+	openData := <-m.conn.Opened()
+
+	// Notify the sockets that they are reconnected
+	m.onReconnect(openData.SID)
 
 	_, err = m.Namespace("/")
 
@@ -142,8 +155,14 @@ func (m *Manager) connectContext(ctx context.Context) error {
 }
 
 func (m *Manager) reconnectContext(ctx context.Context) {
-	m.cancel()
-	m.conn = nil
+	m.Lock()
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+		m.conn = nil
+	}
+	m.Unlock()
+
 	err := backoff.Retry(m.startConnectionOperation(ctx), backoff.WithContext(m.opts.BackOff, ctx))
 
 	if err != nil {
@@ -151,7 +170,6 @@ func (m *Manager) reconnectContext(ctx context.Context) {
 		return
 	}
 
-	m.onReconnect()
 	return
 }
 
@@ -267,24 +285,37 @@ func (m *Manager) writeToEngineContext(ctx context.Context) {
 	}
 }
 
-// DialContext attempts to connect to the Socket.IO server at address
-func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Manager, error) {
-	if cfg == nil {
+func newManagerContext(ctx context.Context, address string, opts *ManagerConfig) (*Manager, error) {
+	if opts == nil {
 		return nil, errors.New("Missing config")
 	}
 
 	manager := &Manager{}
 
-	parsedAddress, err := fixupAddress(address, cfg.AdditionalQueryArgs)
+	parsedAddress, err := fixupAddress(address, opts.AdditionalQueryArgs)
 
 	if err != nil {
 		return nil, err
 	}
 
-	manager.address = parsedAddress
-	manager.opts = cfg
+	manager.fromSockets = make(chan socket.Packet)
+	manager.sockets = make(map[string]*Socket)
+	manager.outgoingPackets = make(chan engine.Packet, 1)
+	manager.socketCtx = ctx
 
-	backoff.Notify
+	manager.address = parsedAddress
+	manager.opts = opts
+
+	return manager, nil
+}
+
+// DialContext attempts to connect to the Socket.IO server at address
+func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Manager, error) {
+	manager, err := newManagerContext(ctx, address, cfg)
+
+	if err != nil {
+		return nil, err
+	}
 
 	err = backoff.Retry(manager.startConnectionOperation(ctx), backoff.WithContext(cfg.BackOff, ctx))
 

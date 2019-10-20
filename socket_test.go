@@ -43,7 +43,6 @@ func TestSocketOnWithFunctionHandler(t *testing.T) {
 func TestSocketOnWithNonFunctionHandler(t *testing.T) {
 	s := Socket{}
 	s.events = sync.Map{}
-	s.currentState = Connected
 
 	err := s.On("fancy", 5)
 
@@ -59,7 +58,6 @@ func TestSocketOnWithNonFunctionHandler(t *testing.T) {
 func TestSocketOff(t *testing.T) {
 	s := Socket{}
 	s.events = sync.Map{}
-	s.currentState = Connected
 
 	err := s.On("fancy", func() {})
 
@@ -77,14 +75,13 @@ func TestSocketOff(t *testing.T) {
 func TestReceiveFromManager(t *testing.T) {
 	s := Socket{}
 	s.events = sync.Map{}
-	s.currentState = Connected
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	packets := make(chan socket.Packet)
 
-	go receiveFromManager(ctx, &s, packets)
+	go s.readFromManager(ctx)
 
 	results := make(chan string, 1)
 
@@ -109,14 +106,13 @@ func TestReceiveFromManager(t *testing.T) {
 func TestReceiveEventWithNoDataManager(t *testing.T) {
 	s := Socket{}
 	s.events = sync.Map{}
-	s.currentState = Connected
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	packets := make(chan socket.Packet)
 
-	go receiveFromManager(ctx, &s, packets)
+	go s.readFromManager(ctx)
 
 	results := make(chan struct{}, 1)
 
@@ -143,14 +139,13 @@ func TestReceiveEventWithNoDataManager(t *testing.T) {
 func TestSocketReceiveEventWithNoHandler(t *testing.T) {
 	s := Socket{}
 	s.events = sync.Map{}
-	s.currentState = Connected
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	packets := make(chan socket.Packet)
 
-	go receiveFromManager(ctx, &s, packets)
+	go s.readFromManager(ctx)
 
 	results := make(chan string, 1)
 
@@ -177,14 +172,13 @@ func TestSocketReceiveEventWithNoHandler(t *testing.T) {
 func TestSocketReceiveAckWithNoHandler(t *testing.T) {
 	s := Socket{}
 	s.acks = sync.Map{}
-	s.currentState = Connected
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	packets := make(chan socket.Packet)
 
-	go receiveFromManager(ctx, &s, packets)
+	go s.readFromManager(ctx)
 
 	results := make(chan int64, 1)
 
@@ -214,7 +208,6 @@ func TestSocketReceiveAckWithNoHandler(t *testing.T) {
 func TestSocketEmitWithAck(t *testing.T) {
 	s := Socket{}
 	s.outgoingPackets = make(chan socket.Packet, 1)
-	s.currentState = Connected
 
 	err := s.EmitWithAck("fancy", func(id int64, data interface{}) {}, "pants")
 
@@ -266,7 +259,7 @@ func TestSocketReceiveAckForEvent(t *testing.T) {
 	s := Socket{}
 	s.outgoingPackets = make(chan socket.Packet, 1)
 	s.incomingPackets = make(chan socket.Packet, 1)
-	s.currentState = Connected
+
 	s.events = sync.Map{}
 	s.acks = sync.Map{}
 
@@ -289,7 +282,7 @@ func TestSocketReceiveAckForEvent(t *testing.T) {
 
 	defer cancel()
 
-	go receiveFromManager(ctx, &s, s.incomingPackets)
+	go s.readFromManager(ctx)
 
 	firstAckID := <-ackIds
 
@@ -302,7 +295,7 @@ func TestSocketSendAckForEvent(t *testing.T) {
 	s := Socket{}
 	s.outgoingPackets = make(chan socket.Packet, 1)
 	s.incomingPackets = make(chan socket.Packet, 1)
-	s.currentState = Connected
+
 	s.events = sync.Map{}
 	s.acks = sync.Map{}
 
@@ -321,7 +314,7 @@ func TestSocketSendAckForEvent(t *testing.T) {
 
 	defer cancel()
 
-	go receiveFromManager(ctx, &s, s.incomingPackets)
+	s.readFromManager(ctx)
 
 	s.incomingPackets <- packetForAck
 
@@ -339,7 +332,6 @@ func TestSocketSendAckForEvent(t *testing.T) {
 func TestSocketEmit(t *testing.T) {
 	s := Socket{}
 	s.outgoingPackets = make(chan socket.Packet, 1)
-	s.currentState = Connected
 
 	s.Emit("fancy", "pants")
 
@@ -386,7 +378,6 @@ func TestSocketEmit(t *testing.T) {
 func TestSocketSend(t *testing.T) {
 	s := Socket{}
 	s.outgoingPackets = make(chan socket.Packet, 1)
-	s.currentState = Connected
 
 	s.Send("pants")
 

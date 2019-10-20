@@ -19,6 +19,7 @@ type mockConn struct {
 	read           chan engine.Packet
 	write          chan engine.Packet
 	closeError     error
+	opened         chan engine.OpenData
 }
 
 type testBinary struct {
@@ -33,6 +34,7 @@ func newMockConn(id string, supportsBinary bool, read, write chan engine.Packet,
 		read,
 		write,
 		closeError,
+		make(chan engine.OpenData, 1),
 	}
 }
 
@@ -43,6 +45,7 @@ func (m *mockConn) Write() chan<- engine.Packet          { return m.write }
 func (m *mockConn) Close() error                         { return m.closeError }
 func (m *mockConn) KeepAliveContext(ctx context.Context) { return }
 func (m *mockConn) State() engine.PacketConnState        { return engine.Connected }
+func (m *mockConn) Opened() <-chan engine.OpenData       { return m.opened }
 
 func TestSendToEngine(t *testing.T) {
 	m := &Manager{}
@@ -115,7 +118,6 @@ func TestReceiveFromEngine(t *testing.T) {
 	s := &Socket{}
 	s.events = sync.Map{}
 	s.incomingPackets = make(chan socket.Packet)
-	s.currentState = Connected
 
 	enginePackets := make(chan engine.Packet, 1)
 
@@ -179,7 +181,6 @@ func TestManagerNamespaceWithExistingSocket(t *testing.T) {
 	}
 
 	s := &Socket{}
-	s.currentState = Connected
 	m.sockets["/"] = s
 
 	ns, err := m.Namespace("/")
