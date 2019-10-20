@@ -93,14 +93,6 @@ func (m *Manager) Namespace(namespace string) (*Socket, error) {
 
 	go receiveFromManager(m.socketCtx, nsSocket, nsSocket.incomingPackets)
 
-	if !socket.IsRootNamespace(namespace) {
-		connectPacket := socket.Packet{}
-		connectPacket.Namespace = namespace
-		connectPacket.Type = socket.Connect
-
-		m.fromSockets <- connectPacket
-	}
-
 	m.sockets[namespace] = nsSocket
 
 	return nsSocket, nil
@@ -291,6 +283,8 @@ func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Mana
 
 	manager.address = parsedAddress
 	manager.opts = cfg
+
+	backoff.Notify
 
 	err = backoff.Retry(manager.startConnectionOperation(ctx), backoff.WithContext(cfg.BackOff, ctx))
 
