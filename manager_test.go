@@ -43,13 +43,7 @@ func TestSendToEngine(t *testing.T) {
 	m.outgoingPackets = make(chan engine.Packet, 1)
 	m.conn = newMockConn("test", true, make(chan engine.Packet), m.outgoingPackets, nil)
 	m.sockets = make(map[string]*Socket)
-
-	s := &Socket{}
-	s.events = sync.Map{}
 	m.fromSockets = make(chan socket.Packet, 1)
-
-	s.outgoingPackets = m.fromSockets
-	s.currentState = Connected
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -57,7 +51,7 @@ func TestSendToEngine(t *testing.T) {
 
 	go m.writeToEngineContext(ctx)
 
-	s.Emit("fancy", "pants")
+	m.fromSockets <- socket.Packet{Type: socket.Event, Namespace: "/", Data: "pants"}
 
 	p := <-m.outgoingPackets
 
