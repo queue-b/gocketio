@@ -3,7 +3,6 @@ package gocketio
 import (
 	"context"
 	"reflect"
-	"sync"
 	"testing"
 	"time"
 
@@ -27,8 +26,7 @@ func TestSocketID(t *testing.T) {
 }
 
 func TestSocketOnWithFunctionHandler(t *testing.T) {
-	s := Socket{}
-	s.events = sync.Map{}
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	err := s.On("fancy", func(s string) {})
 
 	if err != nil {
@@ -41,8 +39,7 @@ func TestSocketOnWithFunctionHandler(t *testing.T) {
 }
 
 func TestSocketOnWithNonFunctionHandler(t *testing.T) {
-	s := Socket{}
-	s.events = sync.Map{}
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
 
 	err := s.On("fancy", 5)
 
@@ -56,8 +53,7 @@ func TestSocketOnWithNonFunctionHandler(t *testing.T) {
 }
 
 func TestSocketOff(t *testing.T) {
-	s := Socket{}
-	s.events = sync.Map{}
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
 
 	err := s.On("fancy", func() {})
 
@@ -73,15 +69,13 @@ func TestSocketOff(t *testing.T) {
 }
 
 func TestReceiveFromManager(t *testing.T) {
-	s := Socket{}
-	s.events = sync.Map{}
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
+
+	s.incomingPackets = packets
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	packets := make(chan socket.Packet)
-
-	s.incomingPackets = packets
 
 	go s.readFromManager(ctx)
 
@@ -106,14 +100,13 @@ func TestReceiveFromManager(t *testing.T) {
 }
 
 func TestReceiveEventWithNoDataManager(t *testing.T) {
-	s := Socket{}
-	s.events = sync.Map{}
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
+
+	s.incomingPackets = packets
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	packets := make(chan socket.Packet)
-	s.incomingPackets = packets
 
 	go s.readFromManager(ctx)
 
@@ -140,14 +133,13 @@ func TestReceiveEventWithNoDataManager(t *testing.T) {
 }
 
 func TestSocketReceiveEventWithNoHandler(t *testing.T) {
-	s := Socket{}
-	s.events = sync.Map{}
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
+
+	s.incomingPackets = packets
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	packets := make(chan socket.Packet)
-	s.incomingPackets = packets
 
 	go s.readFromManager(ctx)
 
@@ -174,14 +166,13 @@ func TestSocketReceiveEventWithNoHandler(t *testing.T) {
 }
 
 func TestSocketReceiveAckWithNoHandler(t *testing.T) {
-	s := Socket{}
-	s.acks = sync.Map{}
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
+
+	s.incomingPackets = packets
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	packets := make(chan socket.Packet)
-	s.incomingPackets = packets
 
 	go s.readFromManager(ctx)
 
@@ -211,8 +202,10 @@ func TestSocketReceiveAckWithNoHandler(t *testing.T) {
 }
 
 func TestSocketEmitWithAck(t *testing.T) {
-	s := Socket{}
-	s.outgoingPackets = make(chan socket.Packet, 1)
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet)
+
+	s.incomingPackets = packets
 
 	err := s.EmitWithAck("fancy", func(id int64, data interface{}) {}, "pants")
 
@@ -226,7 +219,7 @@ func TestSocketEmitWithAck(t *testing.T) {
 		t.Errorf("Expected Event, got %v", p.Type)
 	}
 
-	if p.Namespace != "" {
+	if p.Namespace != "/" {
 		t.Errorf("Expected no namespace, got %v", p.Namespace)
 	}
 
@@ -261,12 +254,10 @@ func TestSocketEmitWithAck(t *testing.T) {
 }
 
 func TestSocketReceiveAckForEvent(t *testing.T) {
-	s := Socket{}
-	s.outgoingPackets = make(chan socket.Packet, 1)
-	s.incomingPackets = make(chan socket.Packet, 1)
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
 
-	s.events = sync.Map{}
-	s.acks = sync.Map{}
+	s.incomingPackets = packets
 
 	ackIds := make(chan int64, 1)
 
@@ -297,12 +288,10 @@ func TestSocketReceiveAckForEvent(t *testing.T) {
 }
 
 func TestSocketSendAckForEvent(t *testing.T) {
-	s := Socket{}
-	s.outgoingPackets = make(chan socket.Packet, 1)
-	s.incomingPackets = make(chan socket.Packet, 1)
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
 
-	s.events = sync.Map{}
-	s.acks = sync.Map{}
+	s.incomingPackets = packets
 
 	s.On("fancyAckable", func() {})
 
@@ -335,8 +324,10 @@ func TestSocketSendAckForEvent(t *testing.T) {
 }
 
 func TestSocketEmit(t *testing.T) {
-	s := Socket{}
-	s.outgoingPackets = make(chan socket.Packet, 1)
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
+
+	s.incomingPackets = packets
 
 	s.Emit("fancy", "pants")
 
@@ -346,7 +337,7 @@ func TestSocketEmit(t *testing.T) {
 		t.Errorf("Expected Event, got %v", p.Type)
 	}
 
-	if p.Namespace != "" {
+	if p.Namespace != "/" {
 		t.Errorf("Expected no namespace, got %v", p.Namespace)
 	}
 
@@ -381,8 +372,10 @@ func TestSocketEmit(t *testing.T) {
 }
 
 func TestSocketSend(t *testing.T) {
-	s := Socket{}
-	s.outgoingPackets = make(chan socket.Packet, 1)
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
+
+	s.incomingPackets = packets
 
 	s.Send("pants")
 
@@ -392,7 +385,7 @@ func TestSocketSend(t *testing.T) {
 		t.Errorf("Expected Event, got %v", p.Type)
 	}
 
-	if p.Namespace != "" {
+	if p.Namespace != "/" {
 		t.Errorf("Expected no namespace, got %v", p.Namespace)
 	}
 
@@ -449,7 +442,10 @@ func TestEventBlacklist(t *testing.T) {
 		}
 	}
 
-	s := &Socket{}
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
+
+	s.incomingPackets = packets
 
 	err := s.Emit("connect", "hello")
 
@@ -467,12 +463,10 @@ func TestEventBlacklist(t *testing.T) {
 
 // TODO: Additional tests for acking functions
 func TestOnOpenOnDisconnect(t *testing.T) {
-	outgoing := make(chan socket.Packet, 1)
-
 	oldID := "oldID"
 	newID := "newID"
 
-	s := newSocket("/", oldID, outgoing)
+	s := newSocket("/", oldID, make(chan socket.Packet, 1))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
