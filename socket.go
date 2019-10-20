@@ -226,11 +226,9 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 
 	message.Data = messageData
 
-	ackCount := atomic.LoadInt64(&s.ackCounter)
+	ackCount := atomic.AddInt64(&s.ackCounter, 1)
 
 	message.ID = &ackCount
-
-	atomic.StoreInt64(&s.ackCounter, (ackCount+1)%maxSafeInteger)
 
 	s.acks.Store(ackCount, ackFunc)
 
