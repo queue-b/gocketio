@@ -29,6 +29,7 @@ type KeepAliveConn struct {
 	isClosed bool
 	once     *sync.Once
 	openOnce *sync.Once
+	pongOnce *sync.Once
 	closeErr error
 }
 
@@ -41,6 +42,7 @@ func NewKeepAliveConn(conn PacketConn, readBufferSize int, outgoing chan Packet)
 		ping:     make(chan Packet),
 		pong:     make(chan struct{}),
 		open:     make(chan Packet),
+		pongOnce: &sync.Once{},
 		openOnce: &sync.Once{},
 		once:     &sync.Once{},
 	}
@@ -131,12 +133,7 @@ func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
 	keepAliveTimeout := time.Duration(data.PingTimeout) * time.Millisecond
 
 	// Send an initial ping
-	select {
-	case <-ctx.Done():
-		return
-	case k.ping <- &StringPacket{Type: Ping}:
-		go k.checkKeepAliveContext(ctx, keepAliveTimeout)
-	}
+	k.sendPingContext(ctx, keepAliveTimeout)
 
 	ticker := time.NewTicker(keepAliveInterval)
 
@@ -146,14 +143,21 @@ func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
 			close(k.ping)
 			return
 		case <-ticker.C:
-			select {
-			case <-ctx.Done():
-				close(k.ping)
-				return
-			case k.ping <- &StringPacket{Type: Ping}:
-				go k.checkKeepAliveContext(ctx, keepAliveTimeout)
-			}
+			k.sendPingContext(ctx, keepAliveTimeout)
 		}
+	}
+}
+
+func (k *KeepAliveConn) sendPingContext(ctx context.Context, keepAliveTimeout time.Duration) {
+	k.Lock()
+	k.pongOnce = &sync.Once{}
+	k.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return
+	case k.ping <- &StringPacket{Type: Ping}:
+		go k.checkKeepAliveContext(ctx, keepAliveTimeout)
 	}
 }
 
@@ -189,10 +193,18 @@ func (k *KeepAliveConn) readContext(ctx context.Context) {
 
 			switch packet.GetType() {
 			case Open:
-				k.open <- packet
-				k.openOnce.Do(func() { k.read <- packet })
+				k.openOnce.Do(func() {
+					k.open <- packet
+					k.read <- packet
+				})
 			case Pong:
-				k.pong <- struct{}{}
+				k.RLock()
+				k.pongOnce.Do(func() {
+					go func() {
+						k.pong <- struct{}{}
+					}()
+				})
+				k.RUnlock()
 			default:
 				k.read <- packet
 			}
