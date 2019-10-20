@@ -21,6 +21,11 @@ type mockConn struct {
 	closeError     error
 }
 
+type testBinary struct {
+	Bytes []byte
+	Label string
+}
+
 func newMockConn(id string, supportsBinary bool, read, write chan engine.Packet, closeError error) *mockConn {
 	return &mockConn{
 		id,
@@ -37,6 +42,7 @@ func (m *mockConn) Read() <-chan engine.Packet           { return m.read }
 func (m *mockConn) Write() chan<- engine.Packet          { return m.write }
 func (m *mockConn) Close() error                         { return m.closeError }
 func (m *mockConn) KeepAliveContext(ctx context.Context) { return }
+func (m *mockConn) State() engine.PacketConnState        { return engine.Connected }
 
 func TestSendToEngine(t *testing.T) {
 	m := &Manager{}
@@ -58,6 +64,50 @@ func TestSendToEngine(t *testing.T) {
 	// TODO: Additional tests to make sure that the packet was encoded correctly
 	if p.GetType() != engine.Message {
 		t.Errorf("Expected Message, got %v", p.GetType())
+	}
+}
+
+func TestSendToEngineBinary(t *testing.T) {
+	m := &Manager{}
+	m.outgoingPackets = make(chan engine.Packet, 2)
+	m.conn = newMockConn("test", true, make(chan engine.Packet), m.outgoingPackets, nil)
+	m.sockets = make(map[string]*Socket)
+	m.fromSockets = make(chan socket.Packet, 1)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+
+	defer cancel()
+
+	go m.writeToEngineContext(ctx)
+
+	m.fromSockets <- socket.Packet{Type: socket.BinaryEvent, Namespace: "/", Data: testBinary{Bytes: []byte{0, 1, 2}, Label: "bubbles"}}
+
+	var results []engine.Packet
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-ctx.Done():
+		case result := <-m.outgoingPackets:
+			results = append(results, result)
+		}
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("Expected 2 packets, got %v\n", len(m.outgoingPackets))
+	}
+
+	p := results[0]
+
+	// TODO: Additional tests to make sure that the packet was encoded correctly
+	if p.GetType() != engine.Message {
+		t.Fatalf("Expected Message, got %v", p.GetType())
+	}
+
+	p = results[1]
+
+	// TODO: Additional tests to make sure that the packet was encoded correctly
+	if p.GetType() != engine.Message {
+		t.Fatalf("Expected Message, got %v", p.GetType())
 	}
 }
 
@@ -104,6 +154,17 @@ func TestReceiveFromEngine(t *testing.T) {
 
 	if rp.Type != socket.Event {
 		t.Errorf("Expected Event, got %v", rp.Type)
+	}
+}
+
+func TestManagerConnected(t *testing.T) {
+	m := &Manager{
+		sockets: make(map[string]*Socket),
+		conn:    newMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
+	}
+
+	if m.Connected() != true {
+		t.Fatal("Expected true, got false")
 	}
 }
 
