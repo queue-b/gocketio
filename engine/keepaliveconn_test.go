@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-type MockPacketConn struct {
+type mockPacketConn struct {
 	sync.RWMutex
 	id             string
 	supportsBinary bool
@@ -21,8 +21,8 @@ type MockPacketConn struct {
 	state          PacketConnState
 }
 
-func NewMockPacketConn(id string, supportsBinary bool, read func() (Packet, error), write func(Packet) error, close func() error) *MockPacketConn {
-	return &MockPacketConn{
+func newMockPacketConn(id string, supportsBinary bool, read func() (Packet, error), write func(Packet) error, close func() error) *mockPacketConn {
+	return &mockPacketConn{
 		sync.RWMutex{},
 		id,
 		supportsBinary,
@@ -35,24 +35,24 @@ func NewMockPacketConn(id string, supportsBinary bool, read func() (Packet, erro
 	}
 }
 
-func (m *MockPacketConn) ID() string                { return m.id }
-func (m *MockPacketConn) SupportsBinary() bool      { return m.supportsBinary }
-func (m *MockPacketConn) Read() (Packet, error)     { return m.read() }
-func (m *MockPacketConn) Write(packet Packet) error { return m.write(packet) }
-func (m *MockPacketConn) Close() error {
+func (m *mockPacketConn) ID() string                { return m.id }
+func (m *mockPacketConn) SupportsBinary() bool      { return m.supportsBinary }
+func (m *mockPacketConn) Read() (Packet, error)     { return m.read() }
+func (m *mockPacketConn) Write(packet Packet) error { return m.write(packet) }
+func (m *mockPacketConn) Close() error {
 	m.Lock()
 	defer m.Unlock()
 	m.state = Disconnected
 	return m.close()
 }
-func (m *MockPacketConn) State() PacketConnState {
+func (m *mockPacketConn) State() PacketConnState {
 	m.RLock()
 	defer m.RUnlock()
 	return m.state
 }
 
-func DefaultMockPacketConn(sequence []Packet) *MockPacketConn {
-	conn := NewMockPacketConn("test", true, nil, nil, func() error { return nil })
+func defaultMockPacketConn(sequence []Packet) *mockPacketConn {
+	conn := newMockPacketConn("test", true, nil, nil, func() error { return nil })
 
 	conn.read = func() (Packet, error) {
 		conn.Lock()
@@ -79,7 +79,7 @@ func DefaultMockPacketConn(sequence []Packet) *MockPacketConn {
 }
 
 func TestKeepAlive(t *testing.T) {
-	conn := DefaultMockPacketConn(packetSequenceOpen)
+	conn := defaultMockPacketConn(packetSequenceOpen)
 
 	keepConn := NewKeepAliveConn(conn, 100, make(chan Packet))
 	keepConn.KeepAliveContext(context.Background())
@@ -93,7 +93,7 @@ func TestKeepAlive(t *testing.T) {
 }
 
 func TestKeepAliveAccessors(t *testing.T) {
-	conn := DefaultMockPacketConn(packetSequenceOpen)
+	conn := defaultMockPacketConn(packetSequenceOpen)
 
 	keepConn := NewKeepAliveConn(conn, 100, make(chan Packet))
 	keepConn.KeepAliveContext(context.Background())
@@ -120,7 +120,7 @@ func TestKeepAliveAccessors(t *testing.T) {
 }
 
 func TestKeepAliveTimeout(t *testing.T) {
-	conn := DefaultMockPacketConn(packetSequenceOpen)
+	conn := defaultMockPacketConn(packetSequenceOpen)
 
 	keepConn := NewKeepAliveConn(conn, 100, make(chan Packet))
 	keepConn.KeepAliveContext(context.Background())
@@ -134,7 +134,7 @@ func TestKeepAliveTimeout(t *testing.T) {
 }
 
 func TestKeepAliveReadWrite(t *testing.T) {
-	conn := DefaultMockPacketConn(packetSequenceNormal)
+	conn := defaultMockPacketConn(packetSequenceNormal)
 
 	outPackets := make(chan Packet)
 
@@ -165,7 +165,7 @@ func TestKeepAliveReadWrite(t *testing.T) {
 }
 
 func TestKeepAliveWriteError(t *testing.T) {
-	conn := DefaultMockPacketConn(packetSequenceNormal)
+	conn := defaultMockPacketConn(packetSequenceNormal)
 	conn.write = func(packet Packet) error { return errors.New("Mock error") }
 
 	outPackets := make(chan Packet)
