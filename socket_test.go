@@ -81,6 +81,8 @@ func TestReceiveFromManager(t *testing.T) {
 
 	packets := make(chan socket.Packet)
 
+	s.incomingPackets = packets
+
 	go s.readFromManager(ctx)
 
 	results := make(chan string, 1)
@@ -111,6 +113,7 @@ func TestReceiveEventWithNoDataManager(t *testing.T) {
 	defer cancel()
 
 	packets := make(chan socket.Packet)
+	s.incomingPackets = packets
 
 	go s.readFromManager(ctx)
 
@@ -144,6 +147,7 @@ func TestSocketReceiveEventWithNoHandler(t *testing.T) {
 	defer cancel()
 
 	packets := make(chan socket.Packet)
+	s.incomingPackets = packets
 
 	go s.readFromManager(ctx)
 
@@ -177,6 +181,7 @@ func TestSocketReceiveAckWithNoHandler(t *testing.T) {
 	defer cancel()
 
 	packets := make(chan socket.Packet)
+	s.incomingPackets = packets
 
 	go s.readFromManager(ctx)
 
@@ -225,7 +230,7 @@ func TestSocketEmitWithAck(t *testing.T) {
 		t.Errorf("Expected no namespace, got %v", p.Namespace)
 	}
 
-	if *p.ID != 0 {
+	if *p.ID != 1 {
 		t.Errorf("Expected 0, got %v", *p.ID)
 	}
 
@@ -267,7 +272,7 @@ func TestSocketReceiveAckForEvent(t *testing.T) {
 
 	s.EmitWithAck("fancier", func(id int64, data interface{}) { ackIds <- id })
 
-	expectedID := int64(0)
+	expectedID := int64(1)
 
 	ackPacket := socket.Packet{
 		Type:      socket.Ack,
@@ -314,7 +319,7 @@ func TestSocketSendAckForEvent(t *testing.T) {
 
 	defer cancel()
 
-	s.readFromManager(ctx)
+	go s.readFromManager(ctx)
 
 	s.incomingPackets <- packetForAck
 
@@ -461,3 +466,38 @@ func TestEventBlacklist(t *testing.T) {
 }
 
 // TODO: Additional tests for acking functions
+func TestOnOpenOnDisconnect(t *testing.T) {
+	outgoing := make(chan socket.Packet, 1)
+
+	oldID := "oldID"
+	newID := "newID"
+
+	s := newSocket("/", oldID, outgoing)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s.onOpen(ctx, newID)
+
+	if s.ID() != newID {
+		t.Fatalf("Expected ID %v, got %v\n", newID, oldID)
+	}
+
+	if s.Connected() {
+		t.Fatal("Expected Disconnected, got Connected")
+	}
+
+	s.onConnect()
+
+	if !s.Connected() {
+		t.Fatal("Expected Connected, got Disconnected")
+	}
+
+	s.onDisconnect(true)
+	s.onDisconnect(true)
+
+	if s.Connected() {
+		t.Fatal("Expected Disconnected, got Connected")
+	}
+
+}
