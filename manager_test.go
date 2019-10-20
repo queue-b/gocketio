@@ -159,6 +159,53 @@ func TestReceiveFromEngine(t *testing.T) {
 	}
 }
 
+func TestReceiveFromEngineNamespaceWithNoMatchingSocket(t *testing.T) {
+	s := &Socket{}
+	s.events = sync.Map{}
+	s.incomingPackets = make(chan socket.Packet)
+
+	enginePackets := make(chan engine.Packet, 1)
+
+	m := &Manager{}
+	m.conn = newMockConn("test", true, enginePackets, make(chan engine.Packet), nil)
+	m.sockets = make(map[string]*Socket)
+	m.sockets["/"] = s
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	defer cancel()
+
+	go m.readFromEngineContext(ctx)
+
+	p := socket.Packet{}
+	p.Type = socket.Event
+	p.Namespace = "/unknown"
+	p.Data = []interface{}{"fancy", "pants"}
+
+	encoded, err := p.Encode(true)
+
+	if err != nil {
+		t.Errorf("Error encoding data %v\n", err)
+	}
+
+	encodedData := string(encoded[0])
+
+	ep := engine.StringPacket{
+		Type: engine.Message,
+		Data: &encodedData,
+	}
+
+	enginePackets <- &ep
+
+	timer := time.NewTimer(20 * time.Millisecond)
+
+	select {
+	case <-timer.C:
+	case <-s.incomingPackets:
+		t.Fatal("Delivered packet to wrong socket")
+	}
+}
+
 func TestManagerConnected(t *testing.T) {
 	m := &Manager{
 		sockets: make(map[string]*Socket),
@@ -319,5 +366,23 @@ func TestDialContext(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("DialContext failed with %v\n", err)
+	}
+}
+
+func TestFixupAddress(t *testing.T) {
+	addr := "http://test.google.com/"
+
+	_, err := fixupAddress(addr, nil)
+
+	if err != nil {
+		t.Fatalf("Unable to parse valid addr %v", addr)
+	}
+
+	addr = "htp:/test.google.com/"
+
+	_, err = fixupAddress(addr, nil)
+
+	if err == nil {
+		t.Fatalf("Parsed invalid address %v", addr)
 	}
 }
