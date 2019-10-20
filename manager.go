@@ -77,7 +77,7 @@ func (m *Manager) forwardMessage(ctx context.Context, message socket.Packet) {
 
 // Connected returns true if the underlying transport is connected, false otherwise
 func (m *Manager) Connected() bool {
-	return m.conn != nil
+	return m.conn.State() == engine.Connected
 }
 
 // Namespace returns a socket for the specified namespace
