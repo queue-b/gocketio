@@ -13,15 +13,35 @@ import (
 	"github.com/queue-b/gocketio/socket"
 )
 
-type mockConn struct{}
+type mockConn struct {
+	id             string
+	supportsBinary bool
+	read           chan engine.Packet
+	write          chan engine.Packet
+	closeError     error
+}
 
-func (m *mockConn) ID() string           { return "hello" }
-func (m *mockConn) SupportsBinary() bool { return true }
+func newMockConn(id string, supportsBinary bool, read, write chan engine.Packet, closeError error) *mockConn {
+	return &mockConn{
+		id,
+		supportsBinary,
+		read,
+		write,
+		closeError,
+	}
+}
+
+func (m *mockConn) ID() string                           { return m.id }
+func (m *mockConn) SupportsBinary() bool                 { return m.supportsBinary }
+func (m *mockConn) Read() <-chan engine.Packet           { return m.read }
+func (m *mockConn) Write() chan<- engine.Packet          { return m.write }
+func (m *mockConn) Close() error                         { return m.closeError }
+func (m *mockConn) KeepAliveContext(ctx context.Context) { return }
 
 func TestSendToEngine(t *testing.T) {
 	m := &Manager{}
 	m.outgoingPackets = make(chan engine.Packet, 1)
-	m.conn = engine.NewMockConn("test", true, make(chan engine.Packet), m.outgoingPackets, nil)
+	m.conn = newMockConn("test", true, make(chan engine.Packet), m.outgoingPackets, nil)
 	m.sockets = make(map[string]*Socket)
 
 	s := &Socket{}
@@ -56,7 +76,7 @@ func TestReceiveFromEngine(t *testing.T) {
 	enginePackets := make(chan engine.Packet, 1)
 
 	m := &Manager{}
-	m.conn = engine.NewMockConn("test", true, enginePackets, make(chan engine.Packet), nil)
+	m.conn = newMockConn("test", true, enginePackets, make(chan engine.Packet), nil)
 	m.sockets = make(map[string]*Socket)
 	m.sockets["/"] = s
 
@@ -100,7 +120,7 @@ func TestManagerNamespaceWithExistingSocket(t *testing.T) {
 		sockets:   make(map[string]*Socket),
 		cancel:    cancel,
 		socketCtx: ctx,
-		conn:      engine.NewMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
+		conn:      newMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
 	}
 
 	s := &Socket{}
@@ -124,7 +144,7 @@ func TestManagerNamespaceWithNewSocket(t *testing.T) {
 	fromSockets := make(chan socket.Packet, 1)
 
 	m := &Manager{
-		conn:        engine.NewMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
+		conn:        newMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
 		sockets:     make(map[string]*Socket),
 		cancel:      cancel,
 		socketCtx:   ctx,

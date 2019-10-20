@@ -7,31 +7,6 @@ import (
 	"time"
 )
 
-type MockConn struct {
-	id             string
-	supportsBinary bool
-	read           chan Packet
-	write          chan Packet
-	closeError     error
-}
-
-func NewMockConn(id string, supportsBinary bool, read, write chan Packet, closeError error) *MockConn {
-	return &MockConn{
-		id,
-		supportsBinary,
-		read,
-		write,
-		closeError,
-	}
-}
-
-func (m *MockConn) ID() string                           { return m.id }
-func (m *MockConn) SupportsBinary() bool                 { return m.supportsBinary }
-func (m *MockConn) Read() <-chan Packet                  { return m.read }
-func (m *MockConn) Write() chan<- Packet                 { return m.write }
-func (m *MockConn) Close() error                         { return m.closeError }
-func (m *MockConn) KeepAliveContext(ctx context.Context) { return }
-
 type Conn interface {
 	ID() string
 	SupportsBinary() bool
