@@ -64,12 +64,6 @@ func (m *Manager) forwardMessage(ctx context.Context, message socket.Packet) {
 			return
 		case s.incomingPackets <- message:
 		}
-
-		if message.Type == socket.Error {
-			m.Lock()
-			delete(m.sockets, ns)
-			close(s.incomingPackets)
-		}
 	} else {
 		m.Unlock()
 	}
