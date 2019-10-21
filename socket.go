@@ -12,13 +12,6 @@ import (
 	"github.com/queue-b/gocketio/socket"
 )
 
-type SocketState int
-
-const (
-	Disconnected SocketState = 1 << iota
-	Connected
-)
-
 // Javascript Number.MAX_SAFE_INTEGER
 var maxSafeInteger = int64(math.Pow(2, 53) - 1)
 
