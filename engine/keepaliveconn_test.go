@@ -79,6 +79,7 @@ func defaultMockPacketConn(sequence []Packet) *mockPacketConn {
 }
 
 func TestKeepAlive(t *testing.T) {
+	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceOpen)
 
 	keepConn := NewKeepAliveConn(conn, 100, make(chan Packet))
@@ -93,6 +94,7 @@ func TestKeepAlive(t *testing.T) {
 }
 
 func TestKeepAliveAccessors(t *testing.T) {
+	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceOpen)
 
 	keepConn := NewKeepAliveConn(conn, 100, make(chan Packet))
@@ -120,6 +122,7 @@ func TestKeepAliveAccessors(t *testing.T) {
 }
 
 func TestKeepAliveTimeout(t *testing.T) {
+	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceOpen)
 
 	keepConn := NewKeepAliveConn(conn, 100, make(chan Packet))
@@ -134,6 +137,7 @@ func TestKeepAliveTimeout(t *testing.T) {
 }
 
 func TestKeepAliveReadWrite(t *testing.T) {
+	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceNormal)
 
 	outPackets := make(chan Packet)
@@ -165,6 +169,7 @@ func TestKeepAliveReadWrite(t *testing.T) {
 }
 
 func TestKeepAliveWriteError(t *testing.T) {
+	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceNormal)
 	conn.write = func(packet Packet) error { return errors.New("Mock error") }
 
