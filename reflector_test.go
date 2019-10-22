@@ -40,6 +40,7 @@ type testUnmarshalType struct {
 }
 
 func TestIsFunction(t *testing.T) {
+	t.Parallel()
 	err := isFunction(nil)
 
 	if err == nil {
@@ -62,6 +63,7 @@ func TestIsFunction(t *testing.T) {
 }
 
 func TestConvertUnmarshalledJSONToReflectValues(t *testing.T) {
+	t.Parallel()
 	fn := func(a string) {}
 	fnVal := reflect.ValueOf(fn)
 
