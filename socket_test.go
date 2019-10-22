@@ -2,10 +2,15 @@ package gocketio
 
 import (
 	"context"
+	"log"
+	"net/http"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
+	"github.com/queue-b/gocketio/engine"
 	"github.com/queue-b/gocketio/socket"
 )
 
@@ -515,5 +520,210 @@ func TestOnOpenOnDisconnect(t *testing.T) {
 	if s.Connected() {
 		t.Fatal("Expected Disconnected, got Connected")
 	}
+}
 
+func TestEndToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping end-to-end tests")
+	}
+
+	mux := http.NewServeMux()
+
+	srv, address := engine.CreateTestSocketIOServer(mux)
+
+	doneSending := make(chan struct{})
+
+	mux.HandleFunc("/socket.io/", engine.CreateTestSocketIOHandler(func(c *websocket.Conn) {
+		var wg sync.WaitGroup
+
+		var writeMutex sync.Mutex
+
+		var normalOpenData = `{"sid":"abcd", "pingInterval": 10000, "pingTimeout": 5000}`
+
+		packetsFromSocketIO := make(chan engine.Packet, 10000)
+
+		ackIds := []int64{
+			0, 1, 2,
+		}
+
+		eventPackets := []socket.Packet{
+			socket.Packet{
+				Namespace: "/",
+				Type:      socket.Event,
+				ID:        &ackIds[0],
+				Data:      []interface{}{"someEvent", "data"},
+			},
+			socket.Packet{
+				Namespace: "/",
+				Type:      socket.Event,
+				Data:      []interface{}{"otherEvent", "nonData"},
+			},
+			socket.Packet{
+				Namespace: "/test",
+				Type:      socket.Event,
+				ID:        &ackIds[1],
+				Data:      []interface{}{"otherEvent", "withAck"},
+			},
+			socket.Packet{
+				Namespace: "/ssdtd",
+				Type:      socket.Event,
+				Data:      []interface{}{"someEvent", "helpfulData"},
+			},
+		}
+
+		packetsForSocketIO := []engine.Packet{
+			&engine.StringPacket{Type: engine.Open, Data: &normalOpenData},
+		}
+
+		for _, v := range eventPackets {
+			data, err := v.Encode(true)
+
+			if err != nil {
+				t.Fatalf("Error encoding test data %v\n", err)
+			}
+
+			strData := string(data[0])
+
+			packetsForSocketIO = append(packetsForSocketIO, &engine.StringPacket{Type: engine.Message, Data: &strData})
+		}
+
+		wg.Add(2)
+		go func() {
+			for {
+				mt, message, err := c.ReadMessage()
+				if err != nil {
+					log.Println("read:", err)
+					break
+				}
+
+				if mt == websocket.TextMessage {
+					packet, err := engine.DecodeStringPacket(string(message))
+
+					if err != nil {
+						log.Println(err)
+						continue
+					}
+
+					packetsFromSocketIO <- packet
+
+					if packet.GetType() == engine.Ping {
+						writeMutex.Lock()
+
+						pong := engine.StringPacket{Type: engine.Pong}
+						encoded, err := pong.Encode(true)
+
+						if err != nil {
+							log.Println(err)
+							continue
+						}
+
+						c.WriteMessage(websocket.TextMessage, encoded)
+						writeMutex.Unlock()
+					}
+				} else if mt == websocket.BinaryMessage {
+					packet, err := engine.DecodeBinaryPacket(message)
+
+					if err != nil {
+						log.Println(err)
+						continue
+					}
+
+					packetsFromSocketIO <- packet
+				} else {
+					wg.Done()
+				}
+
+				log.Printf("recv: %s", message)
+			}
+
+			wg.Done()
+		}()
+
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			for _, v := range packetsForSocketIO {
+				switch v.(type) {
+				case *engine.BinaryPacket:
+					data, err := v.Encode(true)
+
+					if err != nil {
+						continue
+					}
+
+					c.WriteMessage(websocket.BinaryMessage, data)
+				case *engine.StringPacket:
+					data, err := v.Encode(true)
+
+					if err != nil {
+						continue
+					}
+
+					c.WriteMessage(websocket.TextMessage, data)
+				}
+
+				time.Sleep(100 * time.Millisecond)
+			}
+
+			doneSending <- struct{}{}
+
+			wg.Done()
+		}()
+
+		wg.Wait()
+	}))
+
+	go srv.Start()
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	m, err := DialContext(ctx, address, DefaultManagerConfig())
+
+	if err != nil {
+		t.Fatalf("Unable to dial %v\n", err)
+	}
+
+	rootSocket, err := m.Namespace("/")
+
+	if err != nil {
+		t.Fatalf("Unable to create root socket %v\n", err)
+	}
+
+	testSocket, err := m.Namespace("/test")
+
+	if err != nil {
+		t.Fatalf("Unable to create test socket %v\n", err)
+	}
+
+	rootSocketEventsReceived := make(chan string, 10000)
+	testSocketEventsReceived := make(chan string, 10000)
+
+	err = rootSocket.On("someEvent", func(test string) {
+		rootSocketEventsReceived <- test
+	})
+
+	if err != nil {
+		t.Fatalf("Unable to add event handler %v\n", err)
+	}
+
+	err = testSocket.On("otherEvent", func(test string) {
+		testSocketEventsReceived <- test
+	})
+
+	if err != nil {
+		t.Fatalf("Unable to add event handler %v\n", err)
+	}
+
+	<-doneSending
+
+	time.Sleep(10 * time.Millisecond)
+
+	if len(rootSocketEventsReceived) != 1 {
+		t.Fatalf("Expected 1 event received by root namespace socket, got %v\n", len(rootSocketEventsReceived))
+	}
+
+	if len(testSocketEventsReceived) != 1 {
+		t.Fatalf("Expected 1 event received by test namespace socket, got %v\n", len(testSocketEventsReceived))
+	}
 }
