@@ -209,7 +209,6 @@ func (k *KeepAliveConn) readContext(ctx context.Context) {
 			case Open:
 				k.openOnce.Do(func() {
 					k.open <- packet
-					k.read <- packet
 				})
 			case Pong:
 				k.RLock()
