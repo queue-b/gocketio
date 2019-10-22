@@ -11,6 +11,7 @@ import (
 )
 
 func TestID(t *testing.T) {
+	t.Parallel()
 	c := RawConn{}
 
 	id := "asdfjkl"
@@ -22,6 +23,7 @@ func TestID(t *testing.T) {
 }
 
 func TestFixupAddress(t *testing.T) {
+	t.Parallel()
 	address := "http://localhost:3030"
 
 	parsedAddress, err := fixupAddress(address)
@@ -48,6 +50,7 @@ func TestFixupAddress(t *testing.T) {
 }
 
 func TestDialContext(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 
 	srv, address := CreateTestSocketIOServer(mux)
@@ -82,6 +85,7 @@ func TestDialContext(t *testing.T) {
 }
 
 func TestConnectionWrite(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 
 	srv, address := CreateTestSocketIOServer(mux)
@@ -137,6 +141,7 @@ func TestConnectionWrite(t *testing.T) {
 }
 
 func TestConnectionRead(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 
 	srv, address := CreateTestSocketIOServer(mux)
@@ -176,6 +181,7 @@ func TestConnectionRead(t *testing.T) {
 }
 
 func TestConnectionReadCloseMessage(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 
 	srv, address := CreateTestSocketIOServer(mux)
@@ -207,6 +213,7 @@ func TestConnectionReadCloseMessage(t *testing.T) {
 }
 
 func TestConnectionReadOpenMessage(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 
 	srv, address := CreateTestSocketIOServer(mux)
