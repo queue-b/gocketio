@@ -48,6 +48,7 @@ func (m *mockConn) State() engine.PacketConnState        { return engine.Connect
 func (m *mockConn) Opened() <-chan engine.OpenData       { return m.opened }
 
 func TestSendToEngine(t *testing.T) {
+	t.Parallel()
 	m := &Manager{}
 	m.outgoingPackets = make(chan engine.Packet, 1)
 	m.conn = newMockConn("test", true, make(chan engine.Packet), m.outgoingPackets, nil)
@@ -71,6 +72,7 @@ func TestSendToEngine(t *testing.T) {
 }
 
 func TestSendToEngineBinary(t *testing.T) {
+	t.Parallel()
 	m := &Manager{}
 	m.outgoingPackets = make(chan engine.Packet, 2)
 	m.conn = newMockConn("test", true, make(chan engine.Packet), m.outgoingPackets, nil)
@@ -115,6 +117,7 @@ func TestSendToEngineBinary(t *testing.T) {
 }
 
 func TestReceiveFromEngine(t *testing.T) {
+	t.Parallel()
 	s := &Socket{}
 	s.events = sync.Map{}
 	s.incomingPackets = make(chan socket.Packet)
@@ -160,6 +163,7 @@ func TestReceiveFromEngine(t *testing.T) {
 }
 
 func TestReceiveFromEngineNamespaceWithNoMatchingSocket(t *testing.T) {
+	t.Parallel()
 	s := &Socket{}
 	s.events = sync.Map{}
 	s.incomingPackets = make(chan socket.Packet)
@@ -207,6 +211,7 @@ func TestReceiveFromEngineNamespaceWithNoMatchingSocket(t *testing.T) {
 }
 
 func TestManagerConnected(t *testing.T) {
+	t.Parallel()
 	m := &Manager{
 		sockets: make(map[string]*Socket),
 		conn:    newMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
@@ -218,6 +223,7 @@ func TestManagerConnected(t *testing.T) {
 }
 
 func TestManagerNamespaceWithExistingSocket(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 
 	m := &Manager{
@@ -270,6 +276,7 @@ func TestManagerNamespaceWithNewSocket(t *testing.T) {
 }
 
 func TestDisconnect(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 
 	srv, address := engine.CreateTestSocketIOServer(mux)
@@ -312,6 +319,7 @@ func TestDisconnect(t *testing.T) {
 }
 
 func TestConnectContext(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 
 	srv, address := engine.CreateTestSocketIOServer(mux)
@@ -350,6 +358,7 @@ func TestConnectContext(t *testing.T) {
 }
 
 func TestDialContext(t *testing.T) {
+	t.Parallel()
 	mux := http.NewServeMux()
 
 	srv, address := engine.CreateTestSocketIOServer(mux)
@@ -370,6 +379,7 @@ func TestDialContext(t *testing.T) {
 }
 
 func TestFixupAddress(t *testing.T) {
+	t.Parallel()
 	addr := "http://test.google.com/"
 
 	_, err := fixupAddress(addr, nil)
