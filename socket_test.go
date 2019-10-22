@@ -10,6 +10,7 @@ import (
 )
 
 func TestSocketNamespace(t *testing.T) {
+	t.Parallel()
 	s := Socket{namespace: "/test"}
 
 	if s.Namespace() != "/test" {
@@ -18,6 +19,7 @@ func TestSocketNamespace(t *testing.T) {
 }
 
 func TestSocketID(t *testing.T) {
+	t.Parallel()
 	s := Socket{id: "ididid"}
 
 	if s.ID() != "ididid" {
@@ -26,6 +28,7 @@ func TestSocketID(t *testing.T) {
 }
 
 func TestSocketOnWithFunctionHandler(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	err := s.On("fancy", func(s string) {})
 
@@ -39,6 +42,7 @@ func TestSocketOnWithFunctionHandler(t *testing.T) {
 }
 
 func TestSocketOnWithNonFunctionHandler(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 
 	err := s.On("fancy", 5)
@@ -53,6 +57,7 @@ func TestSocketOnWithNonFunctionHandler(t *testing.T) {
 }
 
 func TestSocketOff(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 
 	err := s.On("fancy", func() {})
@@ -69,6 +74,7 @@ func TestSocketOff(t *testing.T) {
 }
 
 func TestReceiveFromManager(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	packets := make(chan socket.Packet, 1)
 
@@ -100,6 +106,7 @@ func TestReceiveFromManager(t *testing.T) {
 }
 
 func TestReceiveEventWithNoDataManager(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	packets := make(chan socket.Packet, 1)
 
@@ -133,6 +140,7 @@ func TestReceiveEventWithNoDataManager(t *testing.T) {
 }
 
 func TestSocketReceiveEventWithNoHandler(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	packets := make(chan socket.Packet, 1)
 
@@ -166,6 +174,7 @@ func TestSocketReceiveEventWithNoHandler(t *testing.T) {
 }
 
 func TestSocketReceiveAckWithNoHandler(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	packets := make(chan socket.Packet, 1)
 
@@ -202,6 +211,7 @@ func TestSocketReceiveAckWithNoHandler(t *testing.T) {
 }
 
 func TestSocketEmitWithAck(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	packets := make(chan socket.Packet)
 
@@ -254,6 +264,7 @@ func TestSocketEmitWithAck(t *testing.T) {
 }
 
 func TestSocketReceiveAckForEvent(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	packets := make(chan socket.Packet, 1)
 
@@ -288,6 +299,7 @@ func TestSocketReceiveAckForEvent(t *testing.T) {
 }
 
 func TestSocketSendAckForEvent(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	packets := make(chan socket.Packet, 1)
 
@@ -324,6 +336,7 @@ func TestSocketSendAckForEvent(t *testing.T) {
 }
 
 func TestSocketEmit(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	packets := make(chan socket.Packet, 1)
 
@@ -372,6 +385,7 @@ func TestSocketEmit(t *testing.T) {
 }
 
 func TestSocketSend(t *testing.T) {
+	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
 	packets := make(chan socket.Packet, 1)
 
@@ -420,6 +434,7 @@ func TestSocketSend(t *testing.T) {
 }
 
 func TestEventBlacklist(t *testing.T) {
+	t.Parallel()
 	blacklistedEvents := []string{
 		"connect",
 		"connect_error",
@@ -463,6 +478,7 @@ func TestEventBlacklist(t *testing.T) {
 
 // TODO: Additional tests for acking functions
 func TestOnOpenOnDisconnect(t *testing.T) {
+	t.Parallel()
 	oldID := "oldID"
 	newID := "newID"
 
