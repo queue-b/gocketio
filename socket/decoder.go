@@ -211,8 +211,7 @@ func decodeMessage(message string) (*Packet, error) {
 		id, err := strconv.ParseInt(string(idBytes), 10, 64)
 
 		if err == nil {
-			usableID := int(id)
-			decoded.ID = &usableID
+			decoded.ID = &id
 		}
 	}
 

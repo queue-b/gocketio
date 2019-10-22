@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -11,20 +12,18 @@ import (
 	"github.com/queue-b/gocketio/socket"
 )
 
-type SocketState int
+// Javascript Number.MAX_SAFE_INTEGER
+var maxSafeInteger = int64(math.Pow(2, 53) - 1)
 
-const (
-	Disconnected SocketState = 1 << iota
-	Connecting
-	Connected
-	Reconnecting
-	Errored
-)
+// AckFunc is a func that can be called in response to receiving an ACK packet
+type AckFunc func(id int64, data interface{})
 
-type AckFunc func(id int, data interface{})
+var errNoHandler = errors.New("No handler registered")
 
-var ErrNoHandler = errors.New("No handler registered")
+// ErrNotConnected is returned when an attempt is made to Emit an event from a Socket that is not in the Connected state
 var ErrNotConnected = errors.New("Not connected")
+
+// ErrBlacklistedEvent is returned when an attempt is made to Emit a reserved event from a Socket
 var ErrBlacklistedEvent = errors.New("Blacklisted event")
 
 // Socket is a Socket.IO socket that can send messages to and
@@ -36,21 +35,31 @@ type Socket struct {
 	namespace       string
 	incomingPackets chan socket.Packet
 	outgoingPackets chan socket.Packet
-	ackCounter      int32
-	currentState    SocketState
-	id              string
-	err             error
+	// ackCounter is a bit tricky. The largest number we should ever see from or send to JS is
+	// Number.MAX_SAFE_INTEGER
+	// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER
+	// Which is currently ((2^53) - 1)
+	// There isn't
+	ackCounter    int64
+	isConnected   bool
+	id            string
+	err           error
+	destroyOnce   sync.Once
+	openOnce      sync.Once
+	cancelReceive context.CancelFunc
 }
 
 // State returns the current state of the socket
-func (s *Socket) State() SocketState {
+func (s *Socket) Connected() bool {
 	s.RLock()
 	defer s.RUnlock()
-	return s.currentState
+	return s.isConnected
 }
 
 // ID returns the ID of the socket
 func (s *Socket) ID() string {
+	s.RLock()
+	defer s.RUnlock()
 	return s.id
 }
 
@@ -95,6 +104,39 @@ func isBlacklisted(event string) bool {
 	}
 }
 
+func newSocket(namespace, id string, outgoing chan socket.Packet) *Socket {
+	nsSocket := &Socket{}
+	nsSocket.outgoingPackets = outgoing
+	nsSocket.namespace = namespace
+	nsSocket.incomingPackets = make(chan socket.Packet)
+
+	nsSocket.events = sync.Map{}
+	nsSocket.acks = sync.Map{}
+	nsSocket.id = fmt.Sprintf("%v#%v", namespace, id)
+
+	return nsSocket
+}
+
+func (s *Socket) onOpen(ctx context.Context, id string) {
+	s.Lock()
+	s.id = id
+	s.Unlock()
+
+	s.openOnce.Do(func() {
+		dCtx, cancel := context.WithCancel(ctx)
+		s.cancelReceive = cancel
+		go s.readFromManager(dCtx)
+	})
+
+	if !socket.IsRootNamespace(s.namespace) {
+		connectPacket := socket.Packet{}
+		connectPacket.Namespace = s.namespace
+		connectPacket.Type = socket.Connect
+
+		s.outgoingPackets <- connectPacket
+	}
+}
+
 // On adds the event handler for the event
 func (s *Socket) On(event string, handler interface{}) error {
 	err := isFunction(handler)
@@ -117,30 +159,10 @@ func (s *Socket) Send(data ...interface{}) error {
 	return s.Emit("message", data...)
 }
 
-func (s *Socket) checkState() error {
-	state := s.State()
-
-	if state == Errored {
-		return s.err
-	}
-
-	if state != Connected {
-		return ErrNotConnected
-	}
-
-	return nil
-}
-
 // Emit raises an event on the server
 func (s *Socket) Emit(event string, data ...interface{}) error {
 	if isBlacklisted(event) {
 		return ErrBlacklistedEvent
-	}
-
-	err := s.checkState()
-
-	if err != nil {
-		return err
 	}
 
 	message := socket.Packet{}
@@ -170,12 +192,6 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 		return ErrBlacklistedEvent
 	}
 
-	err := s.checkState()
-
-	if err != nil {
-		return err
-	}
-
 	message := socket.Packet{}
 	message.Type = socket.Event
 	message.Namespace = s.namespace
@@ -188,9 +204,10 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 	}
 
 	message.Data = messageData
-	ackCount := int(s.ackCounter)
+
+	ackCount := atomic.AddInt64(&s.ackCounter, 1)
+
 	message.ID = &ackCount
-	atomic.AddInt32(&s.ackCounter, 1)
 
 	s.acks.Store(ackCount, ackFunc)
 
@@ -200,42 +217,45 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 }
 
 func (s *Socket) raiseEvent(eventName string, data []interface{}) (interface{}, error) {
-	if handlerVal, ok := s.events.Load(eventName); ok {
-		handler := handlerVal.(reflect.Value)
-		var handlerResults []interface{}
+	var handlerVal interface{}
+	var ok bool
 
-		args, err := convertUnmarshalledJSONToReflectValues(handler, data)
-
-		if err != nil {
-			return nil, err
-		}
-
-		vals := handler.Call(args)
-
-		if vals != nil {
-			for _, v := range vals {
-				handlerResults = append(handlerResults, v.Interface())
-			}
-		}
-
-		// Special case for no result; if the empty handlerResults array is returned
-		// it looks weird to the type system.
-		// Also just setting it to nil and returning it doesn't work
-		if len(handlerResults) == 0 {
-			return nil, nil
-		}
-
-		return handlerResults, nil
+	if handlerVal, ok = s.events.Load(eventName); !ok {
+		return nil, errNoHandler
 	}
 
-	return nil, ErrNoHandler
+	handler := handlerVal.(reflect.Value)
+	var handlerResults []interface{}
+
+	args, err := convertUnmarshalledJSONToReflectValues(handler, data)
+
+	if err != nil {
+		return nil, err
+	}
+
+	vals := handler.Call(args)
+
+	if vals != nil {
+		for _, v := range vals {
+			handlerResults = append(handlerResults, v.Interface())
+		}
+	}
+
+	// Special case for no result; if the empty handlerResults array is returned
+	// it looks weird to the type system.
+	// Also just setting it to nil and returning it doesn't work
+	if len(handlerResults) == 0 {
+		return nil, nil
+	}
+
+	return handlerResults, nil
 }
 
-func (s *Socket) raiseAck(id int, data interface{}) error {
+func (s *Socket) raiseAck(id int64, data interface{}) error {
 	var handlerVal interface{}
 	var ok bool
 	if handlerVal, ok = s.acks.Load(id); !ok {
-		return ErrNoHandler
+		return errNoHandler
 	}
 
 	handler := handlerVal.(AckFunc)
@@ -246,7 +266,7 @@ func (s *Socket) raiseAck(id int, data interface{}) error {
 	return nil
 }
 
-func (s *Socket) sendAck(id int, data interface{}) {
+func (s *Socket) sendAck(id int64, data interface{}) {
 	p := socket.Packet{
 		Type:      socket.Ack,
 		ID:        &id,
@@ -257,69 +277,85 @@ func (s *Socket) sendAck(id int, data interface{}) {
 	s.outgoingPackets <- p
 }
 
-func (s *Socket) setStateFromPacketType(p socket.PacketType) {
+func (s *Socket) onConnect() {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.currentState == Errored {
-		return
-	}
-
-	if p == socket.Disconnect {
-		s.currentState = Disconnected
-	}
-
-	if p == socket.Connect {
-		s.currentState = Connected
-	}
+	s.isConnected = true
 }
 
-func (s *Socket) setError(err error) {
+func (s *Socket) onDisconnect(server bool) {
 	s.Lock()
 	defer s.Unlock()
+	if server {
+		s.destroyOnce.Do(func() {
+			if s.cancelReceive != nil {
+				s.cancelReceive()
+			}
+		})
+	}
 
-	s.currentState = Errored
-	s.err = err
+	s.isConnected = false
 }
 
-func receiveFromManager(ctx context.Context, s *Socket, incomingPackets chan socket.Packet) {
+func (s *Socket) readFromManager(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			fmt.Println("ctx.Done, Killing socket receiveFromManager")
 			return
-		case packet, ok := <-incomingPackets:
+		case packet, ok := <-s.incomingPackets:
 			if !ok {
 				fmt.Println("Invalid read, killing socket receiveFromManager")
 				return
 			}
 
-			s.setStateFromPacketType(packet.Type)
+			if packet.Type == socket.Connect {
+				s.onConnect()
+				continue
+			}
+
+			if packet.Type == socket.Disconnect {
+				s.onDisconnect(true)
+				continue
+			}
 
 			if packet.Type == socket.Event || packet.Type == socket.BinaryEvent {
-				data := packet.Data.([]interface{})
-				eventName := data[0].(string)
+				// Protect against a malformed packet
+				if packet.Data != nil {
+					switch data := packet.Data.(type) {
+					case []interface{}:
+						if len(data) == 0 {
+							continue
+						}
 
-				if len(data) > 1 {
-					data = data[1:]
-				} else {
-					data = make([]interface{}, 0)
-				}
+						switch eventName := data[0].(type) {
+						case string:
+							if len(data) > 1 {
+								data = data[1:]
+							} else {
+								data = make([]interface{}, 0)
+							}
 
-				results, err := s.raiseEvent(eventName, data)
+							results, err := s.raiseEvent(eventName, data)
 
-				if err != nil {
-					fmt.Println("Error raising event", err)
-					continue
-				}
+							if err != nil {
+								fmt.Println("Error raising event", err)
+								continue
+							}
 
-				if packet.ID != nil {
-					s.sendAck(*packet.ID, results)
+							if packet.ID != nil {
+								s.sendAck(*packet.ID, results)
+							}
+						}
+					}
 				}
 			}
 
 			if packet.Type == socket.Ack || packet.Type == socket.BinaryAck {
-				s.raiseAck(*packet.ID, packet.Data)
+				if packet.ID != nil {
+					s.raiseAck(*packet.ID, packet.Data)
+				}
 			}
 		}
 	}

@@ -34,7 +34,7 @@ const (
 // Packet is a Socket.IO packet
 type Packet struct {
 	Type            PacketType
-	ID              *int
+	ID              *int64
 	Namespace       string
 	AttachmentCount int
 	Data            interface{}

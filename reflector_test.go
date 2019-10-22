@@ -1,9 +1,38 @@
 package gocketio
 
 import (
+	"encoding/json"
+	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
+
+type testIntAlias int
+
+const (
+	aliasTypeUnknown testIntAlias = iota
+)
+
+// UnmarshalJSON enables JSON unmarshaling of a SDPType
+func (t *testIntAlias) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	switch strings.ToLower(s) {
+	default:
+		return errors.New("Bad encoding")
+	case "unknown":
+		*t = aliasTypeUnknown
+	}
+
+	return nil
+}
+
+type testUnmarshalWithUnmarshalJSON struct {
+	TestAlias testIntAlias
+}
 
 type testUnmarshalType struct {
 	First  string
@@ -11,6 +40,7 @@ type testUnmarshalType struct {
 }
 
 func TestIsFunction(t *testing.T) {
+	t.Parallel()
 	err := isFunction(nil)
 
 	if err == nil {
@@ -32,38 +62,8 @@ func TestIsFunction(t *testing.T) {
 	}
 }
 
-// func TestConvertUnmarshalledJSONToReflectValuesWithTypeAlias(t *testing.T) {
-// 	fn := func(a webrtc.SessionDescription) {}
-
-// 	fnVal := reflect.ValueOf(fn)
-
-// 	session := webrtc.SessionDescription{
-// 		Type: webrtc.SDPTypeOffer,
-// 		SDP:  "sdp",
-// 	}
-
-// 	sessionBytes, err := json.Marshal(session)
-
-// 	if err != nil {
-// 		t.Fatalf("Unable to marshal %v\n", err)
-// 	}
-
-// 	fmt.Println(string(sessionBytes))
-
-// 	var test interface{}
-
-// 	json.Unmarshal(sessionBytes, &test)
-
-// 	fmt.Println(test)
-
-// 	_, err = convertUnmarshalledJSONToReflectValues(fnVal, []interface{}{test})
-
-// 	if err != nil {
-// 		t.Fatalf("Unable to unmarshal %v\n", err)
-// 	}
-// }
-
 func TestConvertUnmarshalledJSONToReflectValues(t *testing.T) {
+	t.Parallel()
 	fn := func(a string) {}
 	fnVal := reflect.ValueOf(fn)
 
@@ -114,6 +114,67 @@ func TestConvertUnmarshalledJSONToReflectValues(t *testing.T) {
 		}
 	default:
 		t.Errorf("Expected testUnmarshalType, got %T", first)
+	}
+
+	fnMismatchedLengthData := func(a string, b int32, c testUnmarshalType) {}
+	fnVal = reflect.ValueOf(fnMismatchedLengthData)
+
+	vals, err = convertUnmarshalledJSONToReflectValues(fnVal, []interface{}{"hello"})
+
+	if err != nil {
+		t.Errorf("Unable to convert %v", err)
+	}
+
+	if len(vals) != 3 {
+		t.Errorf("Expected 3 converted values, received %v", len(vals))
+	}
+
+	switch first := vals[0].Interface().(type) {
+	case string:
+		if first != "hello" {
+			t.Errorf("Expected first to be 'hello', got %v", first)
+		}
+	default:
+		t.Errorf("Expected string, got %T", first)
+	}
+
+	switch second := vals[1].Interface().(type) {
+	case int32:
+		if second != 0 {
+			t.Errorf("Expected second to be 0, got %v", second)
+		}
+	default:
+		t.Errorf("Expected int32, got %T", second)
+	}
+
+	switch third := vals[2].Interface().(type) {
+	case testUnmarshalType:
+	default:
+		t.Errorf("Expected testUnmarshalType, got %T", third)
+	}
+
+	fnStructForUnmarshalJSON := func(a testUnmarshalWithUnmarshalJSON) {}
+	fnVal = reflect.ValueOf(fnStructForUnmarshalJSON)
+
+	vals, err = convertUnmarshalledJSONToReflectValues(fnVal, map[string]interface{}{
+		"TestAlias": "unknown",
+	})
+
+	if err != nil {
+		t.Errorf("Unable to convert %v", err)
+	}
+
+	if len(vals) != 1 {
+		t.Errorf("Expected 1 converted value, received %v", len(vals))
+	}
+
+	switch first := vals[0].Interface().(type) {
+	case testUnmarshalWithUnmarshalJSON:
+		if first.TestAlias != aliasTypeUnknown {
+			t.Errorf("Expected .TestAlias to be 'aliasTypeUnknown', got %v", first.TestAlias)
+		}
+	default:
+		t.Errorf("Expected testUnmarshalWithUnmarshalJSON, got %T", first)
 	}
 
 }
