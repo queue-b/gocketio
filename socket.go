@@ -37,7 +37,6 @@ type Socket struct {
 	// Number.MAX_SAFE_INTEGER
 	// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER
 	// Which is currently ((2^53) - 1)
-	// There isn't
 	ackCounter    int64
 	isConnected   bool
 	id            string
@@ -147,7 +146,7 @@ func (s *Socket) onOpen(ctx context.Context, id string) {
 // event handler has been set, subsequent calls to On will replace
 // the existing handler.
 //
-// This method is safe for use by multiple concurrent goroutines;
+// The On method is safe for use by multiple concurrent goroutines;
 // however, the order in which the event handlers are added is not
 // strictly defined.
 func (s *Socket) On(event string, handler interface{}) error {
@@ -165,20 +164,26 @@ func (s *Socket) On(event string, handler interface{}) error {
 	return nil
 }
 
-// Off removes the event handler for the event. Deleting an event
-// handler that does not exist is a no-op.
+// Off removes the event handler for the event. Calling Off() for
+// an event that does not have a handler defined is a no-op.
 //
-// This method is safe for use by multiple concurrent goroutines
+// The Off method is safe for use by multiple concurrent goroutines
 func (s *Socket) Off(event string) {
 	s.events.Delete(event)
 }
 
 // Send raises a "message" event on the server
+//
+// The Send method is safe for use by multiple concurrent goroutines
 func (s *Socket) Send(data ...interface{}) error {
 	return s.Emit("message", data...)
 }
 
 // Emit raises an event on the server
+//
+// The Emit method is safe for use by multiple concurrent goroutines;
+// however, the order that events are raised on the server is not
+// guaranteed.
 func (s *Socket) Emit(event string, data ...interface{}) error {
 	if isBlacklisted(event) {
 		return ErrBlacklistedEvent
@@ -206,6 +211,10 @@ func (s *Socket) Emit(event string, data ...interface{}) error {
 
 // EmitWithAck raises an event on the server, and registers a callback that is invoked
 // when the server acknowledges receipt
+//
+// The Emit withAckMethod is safe for use by multiple concurrent goroutines;
+// however, the order that events are raised on the server is not
+// guaranteed.
 func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{}) error {
 	if isBlacklisted(event) {
 		return ErrBlacklistedEvent
