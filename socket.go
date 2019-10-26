@@ -1,3 +1,4 @@
+// Package gocketio provides a client for the https://socket.io/ protocol
 package gocketio
 
 import (
@@ -20,14 +21,11 @@ type AckFunc func(id int64, data interface{})
 
 var errNoHandler = errors.New("No handler registered")
 
-// ErrNotConnected is returned when an attempt is made to Emit an event from a Socket that is not in the Connected state
-var ErrNotConnected = errors.New("Not connected")
-
 // ErrBlacklistedEvent is returned when an attempt is made to Emit a reserved event from a Socket
 var ErrBlacklistedEvent = errors.New("Blacklisted event")
 
-// Socket is a Socket.IO socket that can send messages to and
-// received messages from a namespace
+// Socket sends messages to and receive messages from a Socket.IO Namespace
+// https://socket.io/docs/rooms-and-namespaces/
 type Socket struct {
 	sync.RWMutex
 	events          sync.Map
@@ -39,7 +37,6 @@ type Socket struct {
 	// Number.MAX_SAFE_INTEGER
 	// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER
 	// Which is currently ((2^53) - 1)
-	// There isn't
 	ackCounter    int64
 	isConnected   bool
 	id            string
@@ -49,7 +46,11 @@ type Socket struct {
 	cancelReceive context.CancelFunc
 }
 
-// State returns the current state of the socket
+// Connected returns true if the Socket is connected, false otherwise
+//
+// The socket is considered to be connected if
+// 1. The Manager that created the Socket is connected and
+// 2. The socket has not received a DISCONNCT message from the server
 func (s *Socket) Connected() bool {
 	s.RLock()
 	defer s.RUnlock()
@@ -63,8 +64,8 @@ func (s *Socket) ID() string {
 	return s.id
 }
 
-// Namespace returns the namespace that this socket uses to send and receive
-// events from
+// Namespace returns the Namespace that this socket is
+// connected to
 func (s *Socket) Namespace() string {
 	return s.namespace
 }
@@ -137,8 +138,22 @@ func (s *Socket) onOpen(ctx context.Context, id string) {
 	}
 }
 
-// On adds the event handler for the event
+// On sets the event handler for the event.
+// It returns an error if the event name is blacklisted, or if the
+// handler is not a func
+//
+// There may be exactly one handler for an event at any time. Once an
+// event handler has been set, subsequent calls to On will replace
+// the existing handler.
+//
+// The On method is safe for use by multiple concurrent goroutines;
+// however, the order in which the event handlers are added is not
+// strictly defined.
 func (s *Socket) On(event string, handler interface{}) error {
+	if ok := isBlacklisted(event); !ok {
+		return ErrBlacklistedEvent
+	}
+
 	err := isFunction(handler)
 
 	if err != nil {
@@ -149,17 +164,26 @@ func (s *Socket) On(event string, handler interface{}) error {
 	return nil
 }
 
-// Off removes the event handler for the event
+// Off removes the event handler for the event. Calling Off() for
+// an event that does not have a handler defined is a no-op.
+//
+// The Off method is safe for use by multiple concurrent goroutines
 func (s *Socket) Off(event string) {
 	s.events.Delete(event)
 }
 
 // Send raises a "message" event on the server
+//
+// The Send method is safe for use by multiple concurrent goroutines
 func (s *Socket) Send(data ...interface{}) error {
 	return s.Emit("message", data...)
 }
 
 // Emit raises an event on the server
+//
+// The Emit method is safe for use by multiple concurrent goroutines;
+// however, the order that events are raised on the server is not
+// guaranteed.
 func (s *Socket) Emit(event string, data ...interface{}) error {
 	if isBlacklisted(event) {
 		return ErrBlacklistedEvent
@@ -187,6 +211,10 @@ func (s *Socket) Emit(event string, data ...interface{}) error {
 
 // EmitWithAck raises an event on the server, and registers a callback that is invoked
 // when the server acknowledges receipt
+//
+// The Emit withAckMethod is safe for use by multiple concurrent goroutines;
+// however, the order that events are raised on the server is not
+// guaranteed.
 func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{}) error {
 	if isBlacklisted(event) {
 		return ErrBlacklistedEvent

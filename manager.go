@@ -21,12 +21,21 @@ var ErrInvalidAddress = errors.New("Invalid address")
 
 // ManagerConfig contains configuration information for a Manager
 type ManagerConfig struct {
-	BackOff             backoff.BackOff
-	ConnectionTimeout   time.Duration
+	// Backoff is the backoff strategy used for connection attempts
+	BackOff backoff.BackOff
+	// ConnectionTimeout is the amount of time to wait during a connection
+	// attempt before stopping and trying again
+	ConnectionTimeout time.Duration
+	// AdditionalQueryArgs is a map of additional string values that are appended to the
+	// query string of the server address
 	AdditionalQueryArgs map[string]string
 }
 
 // DefaultManagerConfig returns a ManagerConfig with sane defaults
+//
+// ConnectionTimeout is 20 seconds
+// Backoff is backoff.ExponentialBackoff
+// AdditionalQueryArgs is an empty map
 func DefaultManagerConfig() *ManagerConfig {
 	return &ManagerConfig{
 		ConnectionTimeout:   20 * time.Second,
@@ -35,7 +44,8 @@ func DefaultManagerConfig() *ManagerConfig {
 	}
 }
 
-// Manager manages connections to the same server with different namespaces
+// Manager manages Socket.IO connections to a single server across
+// multiple namespaces
 type Manager struct {
 	sync.Mutex
 	address         *url.URL
@@ -74,7 +84,12 @@ func (m *Manager) Connected() bool {
 	return m.conn.State() == engine.Connected
 }
 
-// Namespace returns a socket for the specified namespace
+// Namespace returns a Socket for the Namespace.
+// If there is an existing Socket for the Namespace, it is returned.
+// If there is no existing Socket for the Namespace, it is created and
+// returned.
+//
+// The Namespace method is safe for use by multiple concurrent goroutines
 func (m *Manager) Namespace(namespace string) (*Socket, error) {
 	m.Lock()
 	defer m.Unlock()
@@ -305,7 +320,12 @@ func newManagerContext(ctx context.Context, address string, opts *ManagerConfig)
 	return manager, nil
 }
 
-// DialContext attempts to connect to the Socket.IO server at address
+// DialContext creates a new instance of Manager connected to the server at address
+//
+// ctx is used to create derived contexts for a variety of long-running operations.
+// If ctx is cancelled, either manually or automatically
+// (i.e. created with context.WithTimeout or or context.WithDeadline) the Manager and its Sockets
+// will cease to function and must be recreated using a new context and call to DialContext
 func DialContext(ctx context.Context, address string, cfg *ManagerConfig) (*Manager, error) {
 	manager, err := newManagerContext(ctx, address, cfg)
 
