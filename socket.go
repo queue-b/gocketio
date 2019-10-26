@@ -1,3 +1,4 @@
+// Package gocketio provides a client for the https://socket.io/ protocol
 package gocketio
 
 import (
@@ -26,8 +27,8 @@ var ErrNotConnected = errors.New("Not connected")
 // ErrBlacklistedEvent is returned when an attempt is made to Emit a reserved event from a Socket
 var ErrBlacklistedEvent = errors.New("Blacklisted event")
 
-// Socket is a Socket.IO socket that can send messages to and
-// received messages from a namespace
+// Socket sends messages to and receive messages from a Socket.IO Namespace
+// https://socket.io/docs/rooms-and-namespaces/
 type Socket struct {
 	sync.RWMutex
 	events          sync.Map
@@ -49,7 +50,11 @@ type Socket struct {
 	cancelReceive context.CancelFunc
 }
 
-// State returns the current state of the socket
+// Connected returns true if the Socket is connected, false otherwise
+//
+// The socket is considered to be connected if
+// 1. The Manager that created the Socket is connected and
+// 2. The socket has not received a DISCONNCT message from the server
 func (s *Socket) Connected() bool {
 	s.RLock()
 	defer s.RUnlock()
@@ -63,8 +68,8 @@ func (s *Socket) ID() string {
 	return s.id
 }
 
-// Namespace returns the namespace that this socket uses to send and receive
-// events from
+// Namespace returns the Namespace that this socket is
+// connected to
 func (s *Socket) Namespace() string {
 	return s.namespace
 }
@@ -137,8 +142,22 @@ func (s *Socket) onOpen(ctx context.Context, id string) {
 	}
 }
 
-// On adds the event handler for the event
+// On sets the event handler for the event.
+// It returns an error if the event name is blacklisted, or if the
+// handler is not a func
+//
+// There may be exactly one handler for an event at any time. Once an
+// event handler has been set, subsequent calls to On will replace
+// the existing handler.
+//
+// This method is safe for use by multiple concurrent goroutines;
+// however, the order in which the event handlers are added is not
+// strictly defined.
 func (s *Socket) On(event string, handler interface{}) error {
+	if ok := isBlacklisted(event); !ok {
+		return ErrBlacklistedEvent
+	}
+
 	err := isFunction(handler)
 
 	if err != nil {
@@ -149,7 +168,10 @@ func (s *Socket) On(event string, handler interface{}) error {
 	return nil
 }
 
-// Off removes the event handler for the event
+// Off removes the event handler for the event. Deleting an event
+// handler that does not exist is a no-op.
+//
+// This method is safe for use by multiple concurrent goroutines
 func (s *Socket) Off(event string) {
 	s.events.Delete(event)
 }
