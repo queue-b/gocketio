@@ -150,7 +150,7 @@ func (s *Socket) onOpen(ctx context.Context, id string) {
 // however, the order in which the event handlers are added is not
 // strictly defined.
 func (s *Socket) On(event string, handler interface{}) error {
-	if ok := isBlacklisted(event); !ok {
+	if ok := isBlacklisted(event); ok {
 		return ErrBlacklistedEvent
 	}
 
