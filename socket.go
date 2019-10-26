@@ -21,9 +21,6 @@ type AckFunc func(id int64, data interface{})
 
 var errNoHandler = errors.New("No handler registered")
 
-// ErrNotConnected is returned when an attempt is made to Emit an event from a Socket that is not in the Connected state
-var ErrNotConnected = errors.New("Not connected")
-
 // ErrBlacklistedEvent is returned when an attempt is made to Emit a reserved event from a Socket
 var ErrBlacklistedEvent = errors.New("Blacklisted event")
 
