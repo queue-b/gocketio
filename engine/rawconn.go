@@ -14,20 +14,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type PacketConnState uint32
-
-const (
-	Connected PacketConnState = iota
-	Disconnected
-)
-
 type PacketConn interface {
 	ID() string
 	SupportsBinary() bool
 	Read() (Packet, error)
 	Write(Packet) error
 	Close() error
-	State() PacketConnState
+	Connected() bool
 }
 
 // ErrDisconnected is returned when the transport is closed
@@ -47,19 +40,19 @@ type ConnConfig struct {
 // RawConn is a connection to an Engine.IO connection
 type RawConn struct {
 	sync.RWMutex
-	readMutex  sync.Mutex
-	writeMutex sync.Mutex
-	socket     *websocket.Conn
-	id         string
-	once       *sync.Once
-	closeErr   error
-	state      PacketConnState
+	readMutex   sync.Mutex
+	writeMutex  sync.Mutex
+	socket      *websocket.Conn
+	id          string
+	once        *sync.Once
+	closeErr    error
+	isConnected bool
 }
 
-func (conn *RawConn) State() PacketConnState {
+func (conn *RawConn) Connected() bool {
 	conn.RLock()
 	defer conn.RUnlock()
-	return conn.state
+	return conn.isConnected
 }
 
 // ID returns the remote ID assigned to this connection
@@ -213,7 +206,7 @@ func (conn *RawConn) Close() error {
 		conn.Lock()
 		defer conn.Unlock()
 		conn.closeErr = conn.socket.Close()
-		conn.state = Disconnected
+		conn.isConnected = false
 	})
 
 	return conn.closeErr
@@ -234,9 +227,9 @@ func DialContext(ctx context.Context, address string) (*RawConn, error) {
 	}
 
 	conn := &RawConn{
-		socket: socket,
-		once:   &sync.Once{},
-		state:  Connected,
+		socket:      socket,
+		once:        &sync.Once{},
+		isConnected: true,
 	}
 
 	return conn, nil

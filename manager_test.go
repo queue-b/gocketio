@@ -44,7 +44,7 @@ func (m *mockConn) Read() <-chan engine.Packet           { return m.read }
 func (m *mockConn) Write() chan<- engine.Packet          { return m.write }
 func (m *mockConn) Close() error                         { return m.closeError }
 func (m *mockConn) KeepAliveContext(ctx context.Context) { return }
-func (m *mockConn) State() engine.PacketConnState        { return engine.Connected }
+func (m *mockConn) Connected() bool                      { return true }
 func (m *mockConn) Opened() <-chan engine.OpenData       { return m.opened }
 
 func TestSendToEngine(t *testing.T) {

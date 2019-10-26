@@ -18,7 +18,7 @@ type mockPacketConn struct {
 	writeChan      chan Packet
 	write          func(Packet) error
 	close          func() error
-	state          PacketConnState
+	connected      bool
 }
 
 func newMockPacketConn(id string, supportsBinary bool, read func() (Packet, error), write func(Packet) error, close func() error) *mockPacketConn {
@@ -31,7 +31,7 @@ func newMockPacketConn(id string, supportsBinary bool, read func() (Packet, erro
 		make(chan Packet, 10000),
 		write,
 		close,
-		Connected,
+		true,
 	}
 }
 
@@ -42,13 +42,13 @@ func (m *mockPacketConn) Write(packet Packet) error { return m.write(packet) }
 func (m *mockPacketConn) Close() error {
 	m.Lock()
 	defer m.Unlock()
-	m.state = Disconnected
+	m.connected = false
 	return m.close()
 }
-func (m *mockPacketConn) State() PacketConnState {
+func (m *mockPacketConn) Connected() bool {
 	m.RLock()
 	defer m.RUnlock()
-	return m.state
+	return m.connected
 }
 
 func defaultMockPacketConn(sequence []Packet) *mockPacketConn {
@@ -88,7 +88,7 @@ func TestKeepAlive(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// Make sure the server isn't closed before interval + timeout
-	if keepConn.State() == Disconnected {
+	if !keepConn.Connected() {
 		log.Fatalf("[%v] Expected connection to be Connected", t.Name())
 	}
 }
@@ -131,7 +131,7 @@ func TestKeepAliveTimeout(t *testing.T) {
 	time.Sleep(3 * time.Second)
 
 	// Make sure the server isn't closed before interval + timeout
-	if keepConn.State() == Connected {
+	if keepConn.Connected() {
 		log.Fatalf("[%v] Expected connection to be Disconnected", t.Name())
 	}
 }

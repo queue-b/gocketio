@@ -13,7 +13,7 @@ type Conn interface {
 	Read() <-chan Packet
 	Write() chan<- Packet
 	Opened() <-chan OpenData
-	State() PacketConnState
+	Connected() bool
 	Close() error
 	KeepAliveContext(context.Context)
 }
@@ -56,8 +56,8 @@ func (k *KeepAliveConn) Opened() <-chan OpenData {
 	return k.opened
 }
 
-func (k *KeepAliveConn) State() PacketConnState {
-	return k.conn.State()
+func (k *KeepAliveConn) Connected() bool {
+	return k.conn.Connected()
 }
 
 // ID returns the ID of the wrapped Conn
