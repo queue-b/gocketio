@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/queue-b/gocketio/engine"
+	"github.com/queue-b/gocketio/engine/transport"
 	"github.com/queue-b/gocketio/socket"
 )
 
@@ -719,7 +720,7 @@ func TestEndToEnd(t *testing.T) {
 
 		var normalOpenData = `{"sid":"abcd", "pingInterval": 10000, "pingTimeout": 5000}`
 
-		packetsFromSocketIO := make(chan engine.Packet, 10000)
+		packetsFromSocketIO := make(chan transport.Packet, 10000)
 
 		ackIds := []int64{
 			0, 1, 2,
@@ -750,8 +751,8 @@ func TestEndToEnd(t *testing.T) {
 			},
 		}
 
-		packetsForSocketIO := []engine.Packet{
-			&engine.StringPacket{Type: engine.Open, Data: &normalOpenData},
+		packetsForSocketIO := []transport.Packet{
+			&transport.StringPacket{Type: transport.Open, Data: &normalOpenData},
 		}
 
 		for _, v := range eventPackets {
@@ -763,7 +764,7 @@ func TestEndToEnd(t *testing.T) {
 
 			strData := string(data[0])
 
-			packetsForSocketIO = append(packetsForSocketIO, &engine.StringPacket{Type: engine.Message, Data: &strData})
+			packetsForSocketIO = append(packetsForSocketIO, &transport.StringPacket{Type: transport.Message, Data: &strData})
 		}
 
 		wg.Add(2)
@@ -776,7 +777,7 @@ func TestEndToEnd(t *testing.T) {
 				}
 
 				if mt == websocket.TextMessage {
-					packet, err := engine.DecodeStringPacket(string(message))
+					packet, err := transport.DecodeStringPacket(string(message))
 
 					if err != nil {
 						log.Println(err)
@@ -785,10 +786,10 @@ func TestEndToEnd(t *testing.T) {
 
 					packetsFromSocketIO <- packet
 
-					if packet.GetType() == engine.Ping {
+					if packet.GetType() == transport.Ping {
 						writeMutex.Lock()
 
-						pong := engine.StringPacket{Type: engine.Pong}
+						pong := transport.StringPacket{Type: transport.Pong}
 						encoded, err := pong.Encode(true)
 
 						if err != nil {
@@ -800,7 +801,7 @@ func TestEndToEnd(t *testing.T) {
 						writeMutex.Unlock()
 					}
 				} else if mt == websocket.BinaryMessage {
-					packet, err := engine.DecodeBinaryPacket(message)
+					packet, err := transport.DecodeBinaryPacket(message)
 
 					if err != nil {
 						log.Println(err)
@@ -822,7 +823,7 @@ func TestEndToEnd(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 			for _, v := range packetsForSocketIO {
 				switch v.(type) {
-				case *engine.BinaryPacket:
+				case *transport.BinaryPacket:
 					data, err := v.Encode(true)
 
 					if err != nil {
@@ -830,7 +831,7 @@ func TestEndToEnd(t *testing.T) {
 					}
 
 					c.WriteMessage(websocket.BinaryMessage, data)
-				case *engine.StringPacket:
+				case *transport.StringPacket:
 					data, err := v.Encode(true)
 
 					if err != nil {

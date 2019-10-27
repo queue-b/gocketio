@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/queue-b/gocketio/engine/transport"
 )
 
 func TestID(t *testing.T) {
@@ -122,8 +123,8 @@ func TestConnectionWrite(t *testing.T) {
 
 	data := "the world"
 
-	packet := StringPacket{
-		Type: Message,
+	packet := transport.StringPacket{
+		Type: transport.Message,
 		Data: &data,
 	}
 
@@ -171,7 +172,7 @@ func TestConnectionRead(t *testing.T) {
 		t.Fatalf("Unable to read %v\n", err)
 	}
 
-	if p.GetType() != Message {
+	if p.GetType() != transport.Message {
 		t.Fatalf("Unexpected message type")
 	}
 

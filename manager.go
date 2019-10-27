@@ -11,9 +11,9 @@ import (
 
 	"github.com/cenkalti/backoff/v3"
 
-	"github.com/queue-b/gocketio/socket"
-
 	"github.com/queue-b/gocketio/engine"
+	"github.com/queue-b/gocketio/engine/transport"
+	"github.com/queue-b/gocketio/socket"
 )
 
 // ErrInvalidAddress is returned when the user-supplied address is invalid
@@ -51,7 +51,7 @@ type Manager struct {
 	address         *url.URL
 	sockets         map[string]*Socket
 	conn            engine.Conn
-	outgoingPackets chan engine.Packet
+	outgoingPackets chan transport.Packet
 	fromSockets     chan socket.Packet
 	socketCtx       context.Context
 	cancel          context.CancelFunc
@@ -268,8 +268,8 @@ func (m *Manager) writeToEngineContext(ctx context.Context) {
 			// even if the packet has binary
 			first := string(encodedData[0])
 
-			p := engine.StringPacket{}
-			p.Type = engine.Message
+			p := transport.StringPacket{}
+			p.Type = transport.Message
 			p.Data = &first
 
 			select {
@@ -281,8 +281,8 @@ func (m *Manager) writeToEngineContext(ctx context.Context) {
 			// Packet has attachments
 			if len(encodedData) > 1 {
 				for _, v := range encodedData[1:] {
-					b := engine.BinaryPacket{}
-					b.Type = engine.Message
+					b := transport.BinaryPacket{}
+					b.Type = transport.Message
 					b.Data = v
 
 					select {
@@ -311,7 +311,7 @@ func newManagerContext(ctx context.Context, address string, opts *ManagerConfig)
 
 	manager.fromSockets = make(chan socket.Packet)
 	manager.sockets = make(map[string]*Socket)
-	manager.outgoingPackets = make(chan engine.Packet, 1)
+	manager.outgoingPackets = make(chan transport.Packet, 1)
 	manager.socketCtx = ctx
 
 	manager.address = parsedAddress

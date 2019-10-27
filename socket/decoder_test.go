@@ -5,7 +5,7 @@ import (
 	"log"
 	"testing"
 
-	"github.com/queue-b/gocketio/engine"
+	"github.com/queue-b/gocketio/engine/transport"
 )
 
 func TestReplacePlaceholdersWithByteSlicesSimpleNumber(t *testing.T) {
@@ -394,20 +394,20 @@ func TestReassembleBinaryPacket(t *testing.T) {
 
 	first := string(encoded[0])
 
-	var enginePackets []engine.Packet
+	var enginePackets []transport.Packet
 
-	enginePackets = append(enginePackets, &engine.StringPacket{
-		Type: engine.Message,
+	enginePackets = append(enginePackets, &transport.StringPacket{
+		Type: transport.Message,
 		Data: &first,
 	})
 
-	enginePackets = append(enginePackets, &engine.BinaryPacket{
-		Type: engine.Message,
+	enginePackets = append(enginePackets, &transport.BinaryPacket{
+		Type: transport.Message,
 		Data: encoded[1],
 	})
 
-	enginePackets = append(enginePackets, &engine.BinaryPacket{
-		Type: engine.Message,
+	enginePackets = append(enginePackets, &transport.BinaryPacket{
+		Type: transport.Message,
 		Data: encoded[2],
 	})
 

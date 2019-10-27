@@ -9,15 +9,15 @@ import (
 	"time"
 
 	"github.com/queue-b/gocketio/engine"
-
+	"github.com/queue-b/gocketio/engine/transport"
 	"github.com/queue-b/gocketio/socket"
 )
 
 type mockConn struct {
 	id             string
 	supportsBinary bool
-	read           chan engine.Packet
-	write          chan engine.Packet
+	read           chan transport.Packet
+	write          chan transport.Packet
 	closeError     error
 	opened         chan engine.OpenData
 }
@@ -27,7 +27,7 @@ type testBinary struct {
 	Label string
 }
 
-func newMockConn(id string, supportsBinary bool, read, write chan engine.Packet, closeError error) *mockConn {
+func newMockConn(id string, supportsBinary bool, read, write chan transport.Packet, closeError error) *mockConn {
 	return &mockConn{
 		id,
 		supportsBinary,
@@ -40,8 +40,8 @@ func newMockConn(id string, supportsBinary bool, read, write chan engine.Packet,
 
 func (m *mockConn) ID() string                           { return m.id }
 func (m *mockConn) SupportsBinary() bool                 { return m.supportsBinary }
-func (m *mockConn) Read() <-chan engine.Packet           { return m.read }
-func (m *mockConn) Write() chan<- engine.Packet          { return m.write }
+func (m *mockConn) Read() <-chan transport.Packet        { return m.read }
+func (m *mockConn) Write() chan<- transport.Packet       { return m.write }
 func (m *mockConn) Close() error                         { return m.closeError }
 func (m *mockConn) KeepAliveContext(ctx context.Context) { return }
 func (m *mockConn) Connected() bool                      { return true }
@@ -50,8 +50,8 @@ func (m *mockConn) Opened() <-chan engine.OpenData       { return m.opened }
 func TestSendToEngine(t *testing.T) {
 	t.Parallel()
 	m := &Manager{}
-	m.outgoingPackets = make(chan engine.Packet, 1)
-	m.conn = newMockConn("test", true, make(chan engine.Packet), m.outgoingPackets, nil)
+	m.outgoingPackets = make(chan transport.Packet, 1)
+	m.conn = newMockConn("test", true, make(chan transport.Packet), m.outgoingPackets, nil)
 	m.sockets = make(map[string]*Socket)
 	m.fromSockets = make(chan socket.Packet, 1)
 
@@ -66,7 +66,7 @@ func TestSendToEngine(t *testing.T) {
 	p := <-m.outgoingPackets
 
 	// TODO: Additional tests to make sure that the packet was encoded correctly
-	if p.GetType() != engine.Message {
+	if p.GetType() != transport.Message {
 		t.Errorf("Expected Message, got %v", p.GetType())
 	}
 }
@@ -74,8 +74,8 @@ func TestSendToEngine(t *testing.T) {
 func TestSendToEngineBinary(t *testing.T) {
 	t.Parallel()
 	m := &Manager{}
-	m.outgoingPackets = make(chan engine.Packet, 2)
-	m.conn = newMockConn("test", true, make(chan engine.Packet), m.outgoingPackets, nil)
+	m.outgoingPackets = make(chan transport.Packet, 2)
+	m.conn = newMockConn("test", true, make(chan transport.Packet), m.outgoingPackets, nil)
 	m.sockets = make(map[string]*Socket)
 	m.fromSockets = make(chan socket.Packet, 1)
 
@@ -87,7 +87,7 @@ func TestSendToEngineBinary(t *testing.T) {
 
 	m.fromSockets <- socket.Packet{Type: socket.BinaryEvent, Namespace: "/", Data: testBinary{Bytes: []byte{0, 1, 2}, Label: "bubbles"}}
 
-	var results []engine.Packet
+	var results []transport.Packet
 
 	for i := 0; i < 2; i++ {
 		select {
@@ -104,14 +104,14 @@ func TestSendToEngineBinary(t *testing.T) {
 	p := results[0]
 
 	// TODO: Additional tests to make sure that the packet was encoded correctly
-	if p.GetType() != engine.Message {
+	if p.GetType() != transport.Message {
 		t.Fatalf("Expected Message, got %v", p.GetType())
 	}
 
 	p = results[1]
 
 	// TODO: Additional tests to make sure that the packet was encoded correctly
-	if p.GetType() != engine.Message {
+	if p.GetType() != transport.Message {
 		t.Fatalf("Expected Message, got %v", p.GetType())
 	}
 }
@@ -122,10 +122,10 @@ func TestReceiveFromEngine(t *testing.T) {
 	s.events = sync.Map{}
 	s.incomingPackets = make(chan socket.Packet)
 
-	enginePackets := make(chan engine.Packet, 1)
+	enginePackets := make(chan transport.Packet, 1)
 
 	m := &Manager{}
-	m.conn = newMockConn("test", true, enginePackets, make(chan engine.Packet), nil)
+	m.conn = newMockConn("test", true, enginePackets, make(chan transport.Packet), nil)
 	m.sockets = make(map[string]*Socket)
 	m.sockets["/"] = s
 
@@ -148,8 +148,8 @@ func TestReceiveFromEngine(t *testing.T) {
 
 	encodedData := string(encoded[0])
 
-	ep := engine.StringPacket{
-		Type: engine.Message,
+	ep := transport.StringPacket{
+		Type: transport.Message,
 		Data: &encodedData,
 	}
 
@@ -168,10 +168,10 @@ func TestReceiveFromEngineNamespaceWithNoMatchingSocket(t *testing.T) {
 	s.events = sync.Map{}
 	s.incomingPackets = make(chan socket.Packet)
 
-	enginePackets := make(chan engine.Packet, 1)
+	enginePackets := make(chan transport.Packet, 1)
 
 	m := &Manager{}
-	m.conn = newMockConn("test", true, enginePackets, make(chan engine.Packet), nil)
+	m.conn = newMockConn("test", true, enginePackets, make(chan transport.Packet), nil)
 	m.sockets = make(map[string]*Socket)
 	m.sockets["/"] = s
 
@@ -194,8 +194,8 @@ func TestReceiveFromEngineNamespaceWithNoMatchingSocket(t *testing.T) {
 
 	encodedData := string(encoded[0])
 
-	ep := engine.StringPacket{
-		Type: engine.Message,
+	ep := transport.StringPacket{
+		Type: transport.Message,
 		Data: &encodedData,
 	}
 
@@ -214,7 +214,7 @@ func TestManagerConnected(t *testing.T) {
 	t.Parallel()
 	m := &Manager{
 		sockets: make(map[string]*Socket),
-		conn:    newMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
+		conn:    newMockConn("test", true, make(chan transport.Packet), make(chan transport.Packet), nil),
 	}
 
 	if m.Connected() != true {
@@ -230,7 +230,7 @@ func TestManagerNamespaceWithExistingSocket(t *testing.T) {
 		sockets:   make(map[string]*Socket),
 		cancel:    cancel,
 		socketCtx: ctx,
-		conn:      newMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
+		conn:      newMockConn("test", true, make(chan transport.Packet), make(chan transport.Packet), nil),
 	}
 
 	s := &Socket{}
@@ -253,7 +253,7 @@ func TestManagerNamespaceWithNewSocket(t *testing.T) {
 	fromSockets := make(chan socket.Packet, 1)
 
 	m := &Manager{
-		conn:        newMockConn("test", true, make(chan engine.Packet), make(chan engine.Packet), nil),
+		conn:        newMockConn("test", true, make(chan transport.Packet), make(chan transport.Packet), nil),
 		sockets:     make(map[string]*Socket),
 		cancel:      cancel,
 		socketCtx:   ctx,
@@ -294,7 +294,7 @@ func TestDisconnect(t *testing.T) {
 		t.Errorf("Invalid address %v\n", err)
 	}
 
-	outgoing := make(chan engine.Packet, 1)
+	outgoing := make(chan transport.Packet, 1)
 
 	m := &Manager{
 		opts:            DefaultManagerConfig(),
@@ -338,7 +338,7 @@ func TestConnectContext(t *testing.T) {
 		t.Errorf("Invalid address %v\n", err)
 	}
 
-	outgoing := make(chan engine.Packet, 1)
+	outgoing := make(chan transport.Packet, 1)
 
 	m := &Manager{
 		opts:            DefaultManagerConfig(),

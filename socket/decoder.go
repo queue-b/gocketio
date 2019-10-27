@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/queue-b/gocketio/engine"
+	"github.com/queue-b/gocketio/engine/transport"
 )
 
 // ErrWaitingForMorePackets is returned when the Decoder has not yet received enough
@@ -31,13 +31,13 @@ func (d *BinaryDecoder) Reset() {
 
 // Decode returns either a Message, or ErrWaitingForMorePackets if additional Packets
 // are required to fully reconstruct a BinaryEvent or BinaryAck
-func (d *BinaryDecoder) Decode(packet engine.Packet) (Packet, error) {
+func (d *BinaryDecoder) Decode(packet transport.Packet) (Packet, error) {
 	switch p := packet.(type) {
-	case *engine.BinaryPacket:
+	case *transport.BinaryPacket:
 		if p.Data != nil {
 			d.buffers = append(d.buffers, p.Data)
 		}
-	case *engine.StringPacket:
+	case *transport.StringPacket:
 		if p.Data != nil {
 			d.Reset()
 			message, err := decodeMessage(*p.Data)

@@ -12,13 +12,14 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/queue-b/gocketio/engine/transport"
 )
 
 type PacketConn interface {
 	ID() string
 	SupportsBinary() bool
-	Read() (Packet, error)
-	Write(Packet) error
+	Read() (transport.Packet, error)
+	Write(transport.Packet) error
 	Close() error
 	Connected() bool
 }
@@ -93,7 +94,7 @@ func fixupAddress(address string) (*url.URL, error) {
 		parsedAddress.Path = newPath
 	}
 
-	eio := fmt.Sprintf("%v", ParserProtocol)
+	eio := fmt.Sprintf("%v", transport.ParserProtocol)
 
 	query := parsedAddress.Query()
 	query.Set("EIO", eio)
@@ -103,7 +104,7 @@ func fixupAddress(address string) (*url.URL, error) {
 	return parsedAddress, nil
 }
 
-func (conn *RawConn) Write(packet Packet) error {
+func (conn *RawConn) Write(packet transport.Packet) error {
 	if packet == nil {
 		return errors.New("Cannot send nil message")
 	}
@@ -117,20 +118,20 @@ func (conn *RawConn) Write(packet Packet) error {
 	conn.writeMutex.Lock()
 	defer conn.writeMutex.Unlock()
 	switch packet.(type) {
-	case *StringPacket:
+	case *transport.StringPacket:
 		err = conn.socket.WriteMessage(websocket.TextMessage, data)
-	case *BinaryPacket:
+	case *transport.BinaryPacket:
 		err = conn.socket.WriteMessage(websocket.BinaryMessage, data)
 	}
 
 	return err
 }
 
-func (conn *RawConn) Read() (Packet, error) {
+func (conn *RawConn) Read() (transport.Packet, error) {
 	conn.readMutex.Lock()
 	t, message, err := conn.socket.ReadMessage()
 	conn.readMutex.Unlock()
-	var packet Packet
+	var packet transport.Packet
 
 	if err != nil {
 		switch err.(type) {
@@ -146,14 +147,14 @@ func (conn *RawConn) Read() (Packet, error) {
 
 	switch t {
 	case websocket.BinaryMessage:
-		packet, err = DecodeBinaryPacket(message)
+		packet, err = transport.DecodeBinaryPacket(message)
 
 		if err != nil {
 			return nil, err
 		}
 	// Ping, Pong, Close, and Error messages all optionally have string data attached
 	case websocket.TextMessage:
-		packet, err = DecodeStringPacket(string(message))
+		packet, err = transport.DecodeStringPacket(string(message))
 
 		if err != nil {
 			return nil, err
@@ -161,7 +162,7 @@ func (conn *RawConn) Read() (Packet, error) {
 	}
 
 	switch packet.GetType() {
-	case Open:
+	case transport.Open:
 		err = conn.onOpen(packet)
 
 		if err != nil {
@@ -169,22 +170,22 @@ func (conn *RawConn) Read() (Packet, error) {
 		}
 
 		return packet, nil
-	case Message:
+	case transport.Message:
 		return packet, nil
-	case Pong:
+	case transport.Pong:
 		return packet, nil
-	case Upgrade:
+	case transport.Upgrade:
 		return packet, nil
-	case Close:
+	case transport.Close:
 		return nil, ErrDisconnected
-	case NoOp:
+	case transport.NoOp:
 		return packet, nil
 	}
 
 	return nil, nil
 }
 
-func (conn *RawConn) onOpen(packet Packet) error {
+func (conn *RawConn) onOpen(packet transport.Packet) error {
 	if packet.GetData() == nil {
 		return errors.New("Invalid open packet")
 	}

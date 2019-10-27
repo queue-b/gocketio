@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"sync"
 	"time"
+
+	"github.com/queue-b/gocketio/engine/transport"
 )
 
 type Conn interface {
 	ID() string
 	SupportsBinary() bool
-	Read() <-chan Packet
-	Write() chan<- Packet
+	Read() <-chan transport.Packet
+	Write() chan<- transport.Packet
 	Opened() <-chan OpenData
 	Connected() bool
 	Close() error
@@ -22,11 +24,11 @@ type Conn interface {
 type KeepAliveConn struct {
 	sync.RWMutex
 	conn     PacketConn
-	read     chan Packet
-	write    chan Packet
-	ping     chan Packet
+	read     chan transport.Packet
+	write    chan transport.Packet
+	ping     chan transport.Packet
 	pong     chan struct{}
-	open     chan Packet
+	open     chan transport.Packet
 	opened   chan OpenData
 	cancel   context.CancelFunc
 	isClosed bool
@@ -37,14 +39,14 @@ type KeepAliveConn struct {
 }
 
 // NewKeepAliveConn returns a new instance of KeepAliveConn
-func NewKeepAliveConn(conn PacketConn, readBufferSize int, outgoing chan Packet) *KeepAliveConn {
+func NewKeepAliveConn(conn PacketConn, readBufferSize int, outgoing chan transport.Packet) *KeepAliveConn {
 	return &KeepAliveConn{
 		conn:     conn,
-		read:     make(chan Packet, readBufferSize),
+		read:     make(chan transport.Packet, readBufferSize),
 		write:    outgoing,
-		ping:     make(chan Packet),
+		ping:     make(chan transport.Packet),
 		pong:     make(chan struct{}),
-		open:     make(chan Packet),
+		open:     make(chan transport.Packet),
 		opened:   make(chan OpenData),
 		pongOnce: &sync.Once{},
 		openOnce: &sync.Once{},
@@ -70,11 +72,11 @@ func (k *KeepAliveConn) SupportsBinary() bool {
 	return k.conn.SupportsBinary()
 }
 
-func (k *KeepAliveConn) Write() chan<- Packet {
+func (k *KeepAliveConn) Write() chan<- transport.Packet {
 	return k.write
 }
 
-func (k *KeepAliveConn) Read() <-chan Packet {
+func (k *KeepAliveConn) Read() <-chan transport.Packet {
 	return k.read
 }
 
@@ -116,7 +118,7 @@ func (k *KeepAliveConn) KeepAliveContext(ctx context.Context) {
 }
 
 func (k *KeepAliveConn) keepAliveContext(ctx context.Context) {
-	var openPacket Packet
+	var openPacket transport.Packet
 	select {
 	case <-ctx.Done():
 		return
@@ -170,7 +172,7 @@ func (k *KeepAliveConn) sendPingContext(ctx context.Context, keepAliveTimeout ti
 	select {
 	case <-ctx.Done():
 		return
-	case k.ping <- &StringPacket{Type: Ping}:
+	case k.ping <- &transport.StringPacket{Type: transport.Ping}:
 		go k.checkKeepAliveContext(ctx, keepAliveTimeout)
 	}
 }
@@ -206,11 +208,11 @@ func (k *KeepAliveConn) readContext(ctx context.Context) {
 			}
 
 			switch packet.GetType() {
-			case Open:
+			case transport.Open:
 				k.openOnce.Do(func() {
 					k.open <- packet
 				})
-			case Pong:
+			case transport.Pong:
 				k.RLock()
 				k.pongOnce.Do(func() {
 					go func() {
@@ -226,7 +228,7 @@ func (k *KeepAliveConn) readContext(ctx context.Context) {
 	}
 }
 
-func (k *KeepAliveConn) writeTo(packet Packet) error {
+func (k *KeepAliveConn) writeTo(packet transport.Packet) error {
 	return k.conn.Write(packet)
 }
 

@@ -3,42 +3,43 @@ package engine
 import (
 	"context"
 	"errors"
-	"log"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/queue-b/gocketio/engine/transport"
 )
 
 type mockPacketConn struct {
 	sync.RWMutex
 	id             string
 	supportsBinary bool
-	read           func() (Packet, error)
+	read           func() (transport.Packet, error)
 	sequence       int32
-	writeChan      chan Packet
-	write          func(Packet) error
+	writeChan      chan transport.Packet
+	write          func(transport.Packet) error
 	close          func() error
 	connected      bool
 }
 
-func newMockPacketConn(id string, supportsBinary bool, read func() (Packet, error), write func(Packet) error, close func() error) *mockPacketConn {
+func newMockPacketConn(id string, supportsBinary bool, read func() (transport.Packet, error), write func(transport.Packet) error, close func() error) *mockPacketConn {
 	return &mockPacketConn{
 		sync.RWMutex{},
 		id,
 		supportsBinary,
 		read,
 		0,
-		make(chan Packet, 10000),
+		make(chan transport.Packet, 10000),
 		write,
 		close,
 		true,
 	}
 }
 
-func (m *mockPacketConn) ID() string                { return m.id }
-func (m *mockPacketConn) SupportsBinary() bool      { return m.supportsBinary }
-func (m *mockPacketConn) Read() (Packet, error)     { return m.read() }
-func (m *mockPacketConn) Write(packet Packet) error { return m.write(packet) }
+func (m *mockPacketConn) ID() string                          { return m.id }
+func (m *mockPacketConn) SupportsBinary() bool                { return m.supportsBinary }
+func (m *mockPacketConn) Read() (transport.Packet, error)     { return m.read() }
+func (m *mockPacketConn) Write(packet transport.Packet) error { return m.write(packet) }
 func (m *mockPacketConn) Close() error {
 	m.Lock()
 	defer m.Unlock()
@@ -51,10 +52,10 @@ func (m *mockPacketConn) Connected() bool {
 	return m.connected
 }
 
-func defaultMockPacketConn(sequence []Packet) *mockPacketConn {
+func defaultMockPacketConn(sequence []transport.Packet) *mockPacketConn {
 	conn := newMockPacketConn("test", true, nil, nil, func() error { return nil })
 
-	conn.read = func() (Packet, error) {
+	conn.read = func() (transport.Packet, error) {
 		conn.Lock()
 		defer conn.Unlock()
 
@@ -70,7 +71,7 @@ func defaultMockPacketConn(sequence []Packet) *mockPacketConn {
 		return nil, nil
 	}
 
-	conn.write = func(packet Packet) error {
+	conn.write = func(packet transport.Packet) error {
 		conn.writeChan <- packet
 		return nil
 	}
@@ -82,14 +83,14 @@ func TestKeepAlive(t *testing.T) {
 	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceOpen)
 
-	keepConn := NewKeepAliveConn(conn, 100, make(chan Packet))
+	keepConn := NewKeepAliveConn(conn, 100, make(chan transport.Packet))
 	keepConn.KeepAliveContext(context.Background())
 
 	time.Sleep(1 * time.Second)
 
 	// Make sure the server isn't closed before interval + timeout
 	if !keepConn.Connected() {
-		log.Fatalf("[%v] Expected connection to be Connected", t.Name())
+		t.Fatalf("[%v] Expected connection to be Connected", t.Name())
 	}
 }
 
@@ -97,7 +98,7 @@ func TestKeepAliveAccessors(t *testing.T) {
 	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceOpen)
 
-	keepConn := NewKeepAliveConn(conn, 100, make(chan Packet))
+	keepConn := NewKeepAliveConn(conn, 100, make(chan transport.Packet))
 	keepConn.KeepAliveContext(context.Background())
 
 	id := keepConn.ID()
@@ -125,14 +126,14 @@ func TestKeepAliveTimeout(t *testing.T) {
 	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceOpen)
 
-	keepConn := NewKeepAliveConn(conn, 100, make(chan Packet))
+	keepConn := NewKeepAliveConn(conn, 100, make(chan transport.Packet))
 	keepConn.KeepAliveContext(context.Background())
 
 	time.Sleep(3 * time.Second)
 
 	// Make sure the server isn't closed before interval + timeout
 	if keepConn.Connected() {
-		log.Fatalf("[%v] Expected connection to be Disconnected", t.Name())
+		t.Fatalf("[%v] Expected connection to be Disconnected", t.Name())
 	}
 }
 
@@ -140,7 +141,7 @@ func TestKeepAliveReadWrite(t *testing.T) {
 	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceNormal)
 
-	outPackets := make(chan Packet)
+	outPackets := make(chan transport.Packet)
 
 	keepConn := NewKeepAliveConn(conn, 100, outPackets)
 	keepConn.KeepAliveContext(context.Background())
@@ -151,18 +152,18 @@ func TestKeepAliveReadWrite(t *testing.T) {
 		t.Fatalf("[%v] Expected packet, got nil", t.Name())
 	}
 
-	if packet.GetType() != Message {
+	if packet.GetType() != transport.Message {
 		t.Fatalf("[%v] Expected Message packet, got %v", t.Name(), packet.GetType())
 	}
 
 	testData := "Hello, world"
-	packet = &StringPacket{Type: Message, Data: &testData}
+	packet = &transport.StringPacket{Type: transport.Message, Data: &testData}
 
 	keepConn.Write() <- packet
 
 	writtenPacket := <-conn.writeChan
 
-	if writtenPacket.GetType() != Message {
+	if writtenPacket.GetType() != transport.Message {
 		t.Fatalf("[%v] Expected Message packet, got %v", t.Name(), writtenPacket.GetType())
 	}
 
@@ -171,15 +172,15 @@ func TestKeepAliveReadWrite(t *testing.T) {
 func TestKeepAliveWriteError(t *testing.T) {
 	t.Parallel()
 	conn := defaultMockPacketConn(packetSequenceNormal)
-	conn.write = func(packet Packet) error { return errors.New("Mock error") }
+	conn.write = func(packet transport.Packet) error { return errors.New("Mock error") }
 
-	outPackets := make(chan Packet)
+	outPackets := make(chan transport.Packet)
 
 	keepConn := NewKeepAliveConn(conn, 100, outPackets)
 	keepConn.KeepAliveContext(context.Background())
 
 	testData := "Hello, world"
-	packet := &StringPacket{Type: Message, Data: &testData}
+	packet := &transport.StringPacket{Type: transport.Message, Data: &testData}
 
 	keepConn.Write() <- packet
 

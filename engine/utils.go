@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 
 	"github.com/gorilla/websocket"
+	"github.com/queue-b/gocketio/engine/transport"
 )
 
 var normalOpenData = `{"sid":"abcd", "pingInterval": 1000, "pingTimeout": 250}`
@@ -14,17 +15,17 @@ var longOpenData = `{"sid":"abcd", "pingInterval": 10000, "pingTimeout": 5000}`
 
 var stringData = "hello 亜"
 
-var packetSequenceNormal = []Packet{
-	&StringPacket{Type: Message, Data: &stringData},
+var packetSequenceNormal = []transport.Packet{
+	&transport.StringPacket{Type: transport.Message, Data: &stringData},
 }
 
-var packetSequenceOpen = []Packet{
-	&StringPacket{Type: Open, Data: &normalOpenData},
-	&StringPacket{Type: Pong},
+var packetSequenceOpen = []transport.Packet{
+	&transport.StringPacket{Type: transport.Open, Data: &normalOpenData},
+	&transport.StringPacket{Type: transport.Pong},
 }
 
-var packetSequenceTimeout = []Packet{
-	&StringPacket{Type: Open, Data: &longOpenData},
+var packetSequenceTimeout = []transport.Packet{
+	&transport.StringPacket{Type: transport.Open, Data: &longOpenData},
 }
 
 func CreateTestSocketIOServer(mux *http.ServeMux) (*httptest.Server, string) {
@@ -74,7 +75,7 @@ func CreateOpenPingPongHandler() http.HandlerFunc {
 
 		msgStr := string(message)
 
-		if msgStr != fmt.Sprintf("%v", Ping) {
+		if msgStr != fmt.Sprintf("%v", transport.Ping) {
 			log.Fatalf("Expected ping")
 		}
 
@@ -88,7 +89,7 @@ func CreateOpenPingPongHandler() http.HandlerFunc {
 	}
 }
 
-func QuickEncode(p Packet) []byte {
+func QuickEncode(p transport.Packet) []byte {
 	bytes, _ := p.Encode(true)
 	return bytes
 }
