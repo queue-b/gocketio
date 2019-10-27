@@ -112,6 +112,8 @@ func replacePlaceholdersWithByteSlices(data interface{}, buffers [][]byte) (inte
 
 			d[k] = updated
 		}
+
+		return d, nil
 	case float64:
 		return d, nil
 	case bool:

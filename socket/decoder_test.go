@@ -2,7 +2,10 @@ package socket
 
 import (
 	"encoding/json"
+	"log"
 	"testing"
+
+	"github.com/queue-b/gocketio/engine"
 )
 
 func TestReplacePlaceholdersWithByteSlicesSimpleNumber(t *testing.T) {
@@ -359,5 +362,73 @@ func TestIsRootNamespace(t *testing.T) {
 
 	if isRoot != true {
 		t.Fatal("Empty string is root")
+	}
+}
+
+func TestReassembleBinaryPacket(t *testing.T) {
+	type testBinary struct {
+		SomeAmountOfBinaryData []byte
+		ACounter               int
+		MoreBinaryData         []byte
+		AnotherCounter         uint8
+	}
+
+	item := testBinary{
+		[]byte{1, 3, 5, 8, 2, 3, 254, 22, 1, 2},
+		5583,
+		[]byte{23, 00, 99, 77, 33, 21},
+		38,
+	}
+
+	packet := Packet{
+		Type:      BinaryEvent,
+		Namespace: "/test",
+		Data:      item,
+	}
+
+	encoded, err := packet.Encode(true)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	first := string(encoded[0])
+
+	var enginePackets []engine.Packet
+
+	enginePackets = append(enginePackets, &engine.StringPacket{
+		Type: engine.Message,
+		Data: &first,
+	})
+
+	enginePackets = append(enginePackets, &engine.BinaryPacket{
+		Type: engine.Message,
+		Data: encoded[1],
+	})
+
+	enginePackets = append(enginePackets, &engine.BinaryPacket{
+		Type: engine.Message,
+		Data: encoded[2],
+	})
+
+	decoder := BinaryDecoder{}
+	decoder.Reset()
+
+	_, err = decoder.Decode(enginePackets[0])
+
+	if err != ErrWaitingForMorePackets {
+		t.Fatalf("Expected ErrWaitingForMorePackets, got %v\n", err)
+	}
+
+	_, err = decoder.Decode(enginePackets[1])
+
+	if err != ErrWaitingForMorePackets {
+		t.Fatalf("Expected ErrWaitingForMorePackets, got %v\n", err)
+	}
+
+	_, err = decoder.Decode(enginePackets[2])
+
+	if err != nil {
+		t.Fatalf("Expected nil, got %v\n", err)
 	}
 }
