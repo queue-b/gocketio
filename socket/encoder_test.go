@@ -18,6 +18,54 @@ type simpleNoBinary struct {
 	Data float32
 }
 
+func TestReplaceByteArraysWithPlaceholders(t *testing.T) {
+	ua := [5]uint{1, 2, 3, 4, 5}
+	ia := [5]int{-7, -8, -9, -10, -11}
+
+	t.Run("WithNoByteArrays", func(t *testing.T) {
+		test := struct {
+			I8   int8
+			I16  int16
+			I32  int32
+			I64  int64
+			U8   uint8
+			U16  uint16
+			U32  uint32
+			U64  uint64
+			F32  float32
+			F64  float64
+			FLIA [5]int
+			FLUA [5]uint
+			YN   bool
+		}{
+			int8(37),
+			int16(291),
+			int32(532),
+			int64(223),
+			uint8(1),
+			uint16(55),
+			uint32(94),
+			uint64(86),
+			float32(3.14235523),
+			float64(235423523.92035923805),
+			ia,
+			ua,
+			true,
+		}
+
+		results, attachments := replaceByteArraysWithPlaceholders(test, make([][]byte, 0))
+
+		if len(attachments) != 0 {
+			t.Fatal("Unexpected attachments")
+		}
+
+		if r, ok := results.(map[string]interface{}); !ok {
+			t.Fatalf("Expected map[string]interface{}, got %v\n", r)
+		}
+
+	})
+}
+
 func TestHasBinary(t *testing.T) {
 	if HasBinary(nil) {
 		t.Fatal("nil is not binary data")
