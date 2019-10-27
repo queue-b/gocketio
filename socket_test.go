@@ -2,6 +2,7 @@ package gocketio
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"reflect"
@@ -63,6 +64,31 @@ func TestSocketOn(t *testing.T) {
 	})
 }
 
+func ExampleSocket_On() {
+	// Connect to a Socket.IO server at example.com
+	m, err := DialContext(context.Background(), "https://example.com/", DefaultManagerConfig())
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Get a reference to a Socket for the root namespace
+	s, err := m.Namespace("/")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Add a handler for the hello event
+	err = s.On("hello", func(from string) {
+		fmt.Printf("Hello from %v\n", from)
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func TestSocketOff(t *testing.T) {
 	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
@@ -78,6 +104,35 @@ func TestSocketOff(t *testing.T) {
 	if _, ok := s.events.Load("fancy"); ok {
 		t.Error("Expected off to remove event handler")
 	}
+}
+
+func ExampleSocket_Off() {
+	// Connect to a Socket.IO server at example.com
+	m, err := DialContext(context.Background(), "https://example.com/", DefaultManagerConfig())
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Get a reference to a Socket for the root namespace
+	s, err := m.Namespace("/")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Add a handler for the hello event
+	err = s.On("hello", func(from string) {
+		fmt.Printf("Hello from %v\n", from)
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// After the call to s.Off, the handler for the "hello" event
+	// will never be called
+	s.Off("hello")
 }
 
 func TestReceiveFromManager(t *testing.T) {
@@ -395,6 +450,56 @@ func TestSocketEmit(t *testing.T) {
 	})
 }
 
+func ExampleSocket_Emit() {
+	// Connect to a Socket.IO server at example.com
+	m, err := DialContext(context.Background(), "https://example.com/", DefaultManagerConfig())
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Get a reference to a Socket for the root namespace
+	s, err := m.Namespace("/")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Raises the "hello" event on the server with "world" as the event data
+	err = s.Emit("hello", "world")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func ExampleSocket_EmitWithAck() {
+	// Connect to a Socket.IO server at example.com
+	m, err := DialContext(context.Background(), "https://example.com/", DefaultManagerConfig())
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Get a reference to a Socket for the root namespace
+	s, err := m.Namespace("/")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Raises the "hello" event on the server with "world" as the event data
+	// and registers an event handler that will be called once the server
+	// has acknowledged receipt of the event
+	err = s.EmitWithAck("hello", func(id int64, data interface{}) {
+		fmt.Printf("Ack %v with data %v\n", id, data)
+	}, "world")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func TestSocketSend(t *testing.T) {
 	t.Parallel()
 	s := newSocket("/", "id", make(chan socket.Packet, 1))
@@ -441,6 +546,29 @@ func TestSocketSend(t *testing.T) {
 		default:
 			t.Errorf("Expected second data element to be string, got %T", second)
 		}
+	}
+}
+
+func ExampleSocket_Send() {
+	// Connect to a Socket.IO server at example.com
+	m, err := DialContext(context.Background(), "https://example.com/", DefaultManagerConfig())
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Get a reference to a Socket for the root namespace
+	s, err := m.Namespace("/")
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Raises a "message" event on the server with "hello", "world" as the event data
+	err = s.Send("hello", "world")
+
+	if err != nil {
+		log.Fatal(err)
 	}
 }
 
