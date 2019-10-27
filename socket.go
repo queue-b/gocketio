@@ -203,20 +203,7 @@ func (s *Socket) Emit(event string, data ...interface{}) error {
 		return ErrBlacklistedEvent
 	}
 
-	message := socket.Packet{}
-
-	// TODO: Check ...data for []byte elements and emit binary events
-	message.Type = socket.Event
-	message.Namespace = s.namespace
-
-	messageData := make([]interface{}, len(data)+1)
-	messageData[0] = event
-
-	if len(messageData) > 1 {
-		copy(messageData[1:], data)
-	}
-
-	message.Data = messageData
+	message := newPacket(event, s.namespace, data...)
 
 	s.outgoingPackets <- message
 
@@ -234,18 +221,7 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 		return ErrBlacklistedEvent
 	}
 
-	message := socket.Packet{}
-	message.Type = socket.Event
-	message.Namespace = s.namespace
-
-	messageData := make([]interface{}, len(data)+1)
-	messageData[0] = event
-
-	if len(messageData) > 1 {
-		copy(messageData[1:], data)
-	}
-
-	message.Data = messageData
+	message := newPacket(event, s.namespace, data...)
 
 	ackCount := atomic.AddInt64(&s.ackCounter, 1)
 
@@ -256,6 +232,29 @@ func (s *Socket) EmitWithAck(event string, ackFunc AckFunc, data ...interface{})
 	s.outgoingPackets <- message
 
 	return nil
+}
+
+func newPacket(event, namespace string, data ...interface{}) socket.Packet {
+	message := socket.Packet{}
+
+	if socket.HasBinary(data) {
+		message.Type = socket.BinaryEvent
+	} else {
+		message.Type = socket.Event
+	}
+
+	message.Namespace = namespace
+
+	messageData := make([]interface{}, len(data)+1)
+	messageData[0] = event
+
+	if len(messageData) > 1 {
+		copy(messageData[1:], data)
+	}
+
+	message.Data = messageData
+
+	return message
 }
 
 func (s *Socket) raiseEvent(eventName string, data []interface{}) (interface{}, error) {
