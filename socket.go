@@ -73,6 +73,10 @@ func (s *Socket) Namespace() string {
 
 // SetErrorHandler sets the error handler that is invoked when Error
 // packets are received
+//
+// Note that this is not a general error handler; if an error is returned from
+// an internal process - e.g. encoding or decoding a packet, network timeout, etc.
+// - this handler will not be invoked
 func (s *Socket) SetErrorHandler(handler func(data interface{})) {
 	s.Lock()
 	defer s.Unlock()
