@@ -44,6 +44,7 @@ type Socket struct {
 	destroyOnce   sync.Once
 	openOnce      sync.Once
 	cancelReceive context.CancelFunc
+	errHandler    func(data interface{})
 }
 
 // Connected returns true if the Socket is connected, false otherwise
@@ -68,6 +69,15 @@ func (s *Socket) ID() string {
 // connected to
 func (s *Socket) Namespace() string {
 	return s.namespace
+}
+
+// SetErrorHandler sets the error handler that is invoked when Error
+// packets are received
+func (s *Socket) SetErrorHandler(handler func(data interface{})) {
+	s.Lock()
+	defer s.Unlock()
+
+	s.errHandler = handler
 }
 
 // There are certain events that users are not allowed to emit
@@ -326,6 +336,15 @@ func (s *Socket) onDisconnect(server bool) {
 	s.isConnected = false
 }
 
+func (s *Socket) onError(data interface{}) {
+	s.RLock()
+	defer s.RUnlock()
+
+	if s.errHandler != nil {
+		s.errHandler(data)
+	}
+}
+
 func (s *Socket) readFromManager(ctx context.Context) {
 	for {
 		select {
@@ -336,6 +355,11 @@ func (s *Socket) readFromManager(ctx context.Context) {
 			if !ok {
 				fmt.Println("Invalid read, killing socket receiveFromManager")
 				return
+			}
+
+			if packet.Type == socket.Error {
+				s.onError(packet.Data)
+				continue
 			}
 
 			if packet.Type == socket.Connect {

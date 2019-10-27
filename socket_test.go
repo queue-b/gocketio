@@ -33,6 +33,57 @@ func TestSocketID(t *testing.T) {
 	}
 }
 
+func TestSocketSetErrorHandler(t *testing.T) {
+	t.Parallel()
+	s := Socket{id: "ididid"}
+
+	handler := func(data interface{}) {}
+
+	s.SetErrorHandler(handler)
+
+	if s.errHandler == nil {
+		t.Fatal("Error handler not set, expected non-nil got nil\n")
+	}
+}
+
+func TestSocketErrorHandlerInvoked(t *testing.T) {
+	t.Parallel()
+	s := newSocket("/", "id", make(chan socket.Packet, 1))
+	packets := make(chan socket.Packet, 1)
+
+	handlerResults := make(chan interface{}, 1)
+
+	handler := func(data interface{}) {
+		handlerResults <- data
+	}
+
+	s.SetErrorHandler(handler)
+
+	s.incomingPackets = packets
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go s.readFromManager(ctx)
+
+	p := socket.Packet{
+		Type: socket.Error,
+		Data: "pants",
+	}
+
+	packets <- p
+
+	result := <-handlerResults
+
+	if r, ok := result.(string); ok {
+		if r != "pants" {
+			t.Fatalf("Expected pants, got %v", r)
+		}
+	} else {
+		t.Fatalf("Expected string, got %T", result)
+	}
+}
+
 func TestSocketOn(t *testing.T) {
 	t.Run("WithFunctionHandler", func(t *testing.T) {
 		t.Parallel()
