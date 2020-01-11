@@ -67,4 +67,4 @@ Apache
 
 ## Authors
 
-[https://github.com/queue-b](Alex Kube)
+[Alex Kube](https://github.com/queue-b/)
