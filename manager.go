@@ -47,7 +47,7 @@ func DefaultManagerConfig() *ManagerConfig {
 // Manager manages Socket.IO connections to a single server across
 // multiple namespaces
 type Manager struct {
-	sync.Mutex
+	sync.RWMutex
 	address         *url.URL
 	sockets         map[string]*Socket
 	conn            engine.Conn
@@ -144,13 +144,15 @@ func (m *Manager) connectContext(ctx context.Context) error {
 	m.Lock()
 	m.conn = engine.NewKeepAliveConn(conn, 100, m.outgoingPackets)
 	m.cancel = cancel
+	opened := m.conn.Opened()
+
 	m.Unlock()
 
 	go m.conn.KeepAliveContext(managerCtx)
 	go m.readFromEngineContext(managerCtx)
 	go m.writeToEngineContext(managerCtx)
 
-	openData := <-m.conn.Opened()
+	openData := <-opened
 
 	// Notify the sockets that they are reconnected
 	m.onReconnect(openData.SID)
@@ -223,13 +225,18 @@ func fixupAddress(address string, additionaQueryArgs map[string]string) (*url.UR
 func (m *Manager) readFromEngineContext(ctx context.Context) {
 	d := socket.BinaryDecoder{}
 
+	m.RLock()
+	read := m.conn.Read()
+	socketCtx := m.socketCtx
+	m.RUnlock()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case packet, ok := <-m.conn.Read():
+		case packet, ok := read:
 			if !ok {
-				go m.reconnectContext(m.socketCtx)
+				go m.reconnectContext(socketCtx)
 				return
 			}
 
@@ -246,19 +253,25 @@ func (m *Manager) readFromEngineContext(ctx context.Context) {
 }
 
 func (m *Manager) writeToEngineContext(ctx context.Context) {
+	m.RLock()
+	fromSockets := m.fromSockets
+	outgoing := m.outgoingPackets
+	supportsBinary := m.conn.SupportsBinary()
+	m.RUnlock()
+
 	for {
 		select {
 		case <-ctx.Done():
 			// We're the writer, so it's our job to close the channel
-			close(m.outgoingPackets)
+			close(outgoing)
 			return
-		case packet, ok := <-m.fromSockets:
+		case packet, ok := <-fromSockets:
 			if !ok {
-				close(m.outgoingPackets)
+				close(outgoing)
 				return
 			}
 
-			encodedData, err := packet.Encode(m.conn.SupportsBinary())
+			encodedData, err := packet.Encode(supportsBinary)
 
 			if err != nil || len(encodedData) == 0 {
 				continue
@@ -288,7 +301,7 @@ func (m *Manager) writeToEngineContext(ctx context.Context) {
 					select {
 					case <-ctx.Done():
 						return
-					case m.outgoingPackets <- &b:
+					case outgoing <- &b:
 					}
 				}
 			}
