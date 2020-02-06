@@ -234,7 +234,7 @@ func (m *Manager) readFromEngineContext(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case packet, ok := read:
+		case packet, ok := <-read:
 			if !ok {
 				go m.reconnectContext(socketCtx)
 				return
