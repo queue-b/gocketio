@@ -142,6 +142,7 @@ func (m *Manager) connectContext(ctx context.Context) error {
 	}
 
 	m.Lock()
+	m.outgoingPackets = make(chan engine.Packet, 1)
 	m.conn = engine.NewKeepAliveConn(conn, 100, m.outgoingPackets)
 	m.cancel = cancel
 	opened := m.conn.Opened()
@@ -288,7 +289,7 @@ func (m *Manager) writeToEngineContext(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case m.outgoingPackets <- &p:
+			case outgoing <- &p:
 			}
 
 			// Packet has attachments
@@ -324,7 +325,6 @@ func newManagerContext(ctx context.Context, address string, opts *ManagerConfig)
 
 	manager.fromSockets = make(chan socket.Packet)
 	manager.sockets = make(map[string]*Socket)
-	manager.outgoingPackets = make(chan engine.Packet, 1)
 	manager.socketCtx = ctx
 
 	manager.address = parsedAddress
